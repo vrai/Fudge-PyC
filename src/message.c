@@ -21,6 +21,16 @@
  * Constructor/destructor implementations
  */
 
+static const char DOC_fudgepyc_message [] =
+    "\nMessage() -> Message\n\n"
+    "fudgepyc.Message contains zero or more fields, each of which may have\n"
+    "a name, an ordinal (a 16-bit integer), both or none of these. Messages\n"
+    "themselves contain no meta-data.\n\n"
+    "Field order is maintained across encoding and decoding, fields will\n"
+    "remain in insertion order; regardless of if they have a name and/or\n"
+    "ordinal.\n"
+    "\n"
+    "@return: Message instance\n";
 static int Message_init ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { 0 };
@@ -195,7 +205,14 @@ static PyObject * Message_addFieldIndicatorImpl ( Message * self,
  * Method helper macros
  */
 
-#define MESSAGE_ADD_FIELD_SCALAR( TYPENAME, CTYPE )                         \
+#define MESSAGE_ADD_FIELD_SCALAR( TYPENAME, CTYPE, PYSTR, FUDGESTR )        \
+static const char DOC_fudgepyc_message_addField ## TYPENAME [] =            \
+    "Adds a " FUDGESTR " field to the Message; value must be of Python "    \
+    "type\n" PYSTR ". Field name and ordinal are optional.\n\n"             \
+    "@param value: field value, of type " PYSTR "\n"                        \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
 PyObject * Message_addField ## TYPENAME ( Message * self,                   \
                                           PyObject * args,                  \
                                           PyObject * kwds )                 \
@@ -231,7 +248,14 @@ PyObject * Message_addField ## TYPENAME ( Message * self,                   \
     Py_RETURN_NONE;                                                         \
 }
 
-#define MESSAGE_ADD_FIELD_ARRAY( TYPENAME, CTYPE )                          \
+#define MESSAGE_ADD_FIELD_ARRAY( TYPENAME, CTYPE, PYSTR, FUDGESTR )         \
+static const char DOC_fudgepyc_message_addField ## TYPENAME ## Array [] =   \
+    "Adds a " FUDGESTR " field to the Message; value must be of Python\n"   \
+    "type " PYSTR ". Field name and ordinal are optional.\n\n"              \
+    "@param value: field value\n"                                           \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
 PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
                                                    PyObject * args,         \
                                                    PyObject * kwds )        \
@@ -272,8 +296,16 @@ PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
     Py_RETURN_NONE;                                                         \
 }
 
-#define MESSAGE_ADD_FIELD_FIXED_ARRAY( TYPENAME, CTYPE, WIDTH )             \
-PyObject * Message_addField ## WIDTH ## TYPENAME ## Array (                 \
+#define MESSAGE_ADD_FIELD_FIXED_ARRAY( WIDTH )                              \
+static const char DOC_fudgepyc_message_addField ## WIDTH ## ByteArray [] =  \
+    "Adds a Byte[" #WIDTH "] field to the Message; value must be of\n"      \
+    "Python type String, Unicode or [int, ...] and have a length of "       \
+    #WIDTH ".\nField name and ordinal are optional.\n\n"                   \
+    "@param value: field value\n"                                           \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
+PyObject * Message_addField ## WIDTH ## ByteArray (                         \
                Message * self,                                              \
                PyObject * args,                                             \
                PyObject * kwds )                                            \
@@ -284,22 +316,21 @@ PyObject * Message_addField ## WIDTH ## TYPENAME ## Array (                 \
     PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
     FudgeString name = 0;                                                   \
     fudge_i16 ordinal;                                                      \
-    CTYPE array [ WIDTH ];                                                  \
+    fudge_byte array [ WIDTH ];                                             \
                                                                             \
     if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
                                          &valobj,                           \
                                          &nameobj,                          \
                                          &PyInt_Type, &ordobj ) )           \
         return 0;                                                           \
-    if ( fudgepyc_convertPythonToFixed ## TYPENAME ## Array (               \
-             array, WIDTH, valobj ) )                                       \
+    if ( fudgepyc_convertPythonToFixedByteArray ( array, WIDTH, valobj ) )  \
         return 0;                                                           \
     if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
         return 0;                                                           \
     if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
         return 0;                                                           \
                                                                             \
-    status = FudgeMsg_addField ## WIDTH ## TYPENAME ## Array (              \
+    status = FudgeMsg_addField ## WIDTH ## ByteArray (                      \
                  self->msg, name, ordobj ? &ordinal : 0, array );           \
     FudgeString_release ( name );                                           \
                                                                             \
@@ -346,7 +377,12 @@ PyObject * Message_subscript ( Message * self, PyObject * key )
     return field;
 }
 
-#define DOC_fudgepyc_message_addFieldIndicator "TODO Method indicator doc"
+static const char DOC_fudgepyc_message_addFieldIndicator [] =
+    "\nAdds an indicator (empty) field to the Message. Field name and ordinal\n"
+    "are optional.\n\n"
+    "@param name: field name String, defaults to None\n"
+    "@param ordinal: field ordinal integer, defaults to None\n"
+    "@return: None or Exception on failure";
 PyObject * Message_addFieldIndicator ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "name", "ordinal", 0 };
@@ -359,28 +395,24 @@ PyObject * Message_addFieldIndicator ( Message * self, PyObject * args, PyObject
     return Message_addFieldIndicatorImpl ( self, nameobj, ordobj );
 }
 
-#define DOC_fudgepyc_message_addFieldBool "TODO Method bool doc"
-MESSAGE_ADD_FIELD_SCALAR( Bool, fudge_bool )
+MESSAGE_ADD_FIELD_SCALAR( Bool,   fudge_bool,  "bool",           "Boolean" )
+MESSAGE_ADD_FIELD_SCALAR( Byte,   fudge_byte,  "int/long",       "Byte" )
+MESSAGE_ADD_FIELD_SCALAR( I16,    fudge_i16,   "int/long",       "Short" )
+MESSAGE_ADD_FIELD_SCALAR( I32,    fudge_i32,   "int/long",       "Int" )
+MESSAGE_ADD_FIELD_SCALAR( I64,    fudge_i64,   "int/long",       "Long" )
+MESSAGE_ADD_FIELD_SCALAR( F32,    fudge_f32,   "float",          "Float" )
+MESSAGE_ADD_FIELD_SCALAR( F64,    fudge_f64,   "float",          "Double" )
+MESSAGE_ADD_FIELD_SCALAR( String, FudgeString, "String/Unicode", "String" )
 
-#define DOC_fudgepyc_message_addFieldByte "TODO Method byte doc"
-MESSAGE_ADD_FIELD_SCALAR( Byte, fudge_byte )
-
-#define DOC_fudgepyc_message_addFieldI16 "TODO Method short doc"
-MESSAGE_ADD_FIELD_SCALAR( I16, fudge_i16 )
-
-#define DOC_fudgepyc_message_addFieldI32 "TODO Method int doc"
-MESSAGE_ADD_FIELD_SCALAR( I32, fudge_i32 )
-
-#define DOC_fudgepyc_message_addFieldI64 "TODO Method long doc"
-MESSAGE_ADD_FIELD_SCALAR( I64, fudge_i64 )
-
-#define DOC_fudgepyc_message_addFieldF32 "TODO Method float doc"
-MESSAGE_ADD_FIELD_SCALAR( F32, fudge_f32 )
-
-#define DOC_fudgepyc_message_addFieldF64 "TODO Method double doc"
-MESSAGE_ADD_FIELD_SCALAR( F64, fudge_f64 )
-
-#define DOC_fudgepyc_message_addFieldMsg "TODO Method message doc"
+static const char DOC_fudgepyc_message_addFieldMsg [] =
+    "\nAdds a Message field to the current Message; value must be a\n"
+    "fudgepyc.Message instance. Note that the Message is referred to by\n"
+    "reference and any changes made to it after being added will be included\n"
+    "in the encoded message. Field name and ordinal are optional.\n\n"
+    "@param value: field value, of type fudgepyc.Message\n"
+    "@param name: field name String, defaults to None\n"
+    "@param ordinal: field ordinal integer, defaults to None\n"
+    "@return: None or Exception on failure";
 PyObject * Message_addFieldMsg ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "value", "name", "ordinal", 0 };
@@ -415,55 +447,43 @@ PyObject * Message_addFieldMsg ( Message * self, PyObject * args, PyObject * kwd
     Py_RETURN_NONE;
 }
 
-#define DOC_fudgepyc_message_addFieldString "TODO Method string doc"
-MESSAGE_ADD_FIELD_SCALAR( String, FudgeString )
+MESSAGE_ADD_FIELD_ARRAY( Byte, fudge_byte, "String, Unicode or [int, ...]", "Byte[]" )
+MESSAGE_ADD_FIELD_ARRAY( I16,  fudge_i16,  "[int, ...]",                    "Short[]" )
+MESSAGE_ADD_FIELD_ARRAY( I32,  fudge_i32,  "[int, ...]",                    "Int[]" )
+MESSAGE_ADD_FIELD_ARRAY( I64,  fudge_i64,  "[int, ...]",                    "Long[]" )
+MESSAGE_ADD_FIELD_ARRAY( F32,  fudge_f32,  "[float, ...]",                  "Float[]" )
+MESSAGE_ADD_FIELD_ARRAY( F64,  fudge_f64,  "[float, ...]",                  "Double[]" )
 
-#define DOC_fudgepyc_message_addFieldByteArray "TODO Method var byte array doc"
-MESSAGE_ADD_FIELD_ARRAY( Byte, fudge_byte );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 4 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 8 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 16 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 20 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 32 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 64 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 128 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 256 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY( 512 );
 
-#define DOC_fudgepyc_message_addFieldI16Array "TODO Method var short array doc"
-MESSAGE_ADD_FIELD_ARRAY( I16, fudge_i16 );
-
-#define DOC_fudgepyc_message_addFieldI32Array "TODO Method var int array doc"
-MESSAGE_ADD_FIELD_ARRAY( I32, fudge_i32 );
-
-#define DOC_fudgepyc_message_addFieldI64Array "TODO Method var long array doc"
-MESSAGE_ADD_FIELD_ARRAY( I64, fudge_i64 );
-
-#define DOC_fudgepyc_message_addFieldF32Array "TODO Method var float array doc"
-MESSAGE_ADD_FIELD_ARRAY( F32, fudge_f32 );
-
-#define DOC_fudgepyc_message_addFieldF64Array "TODO Method var double array doc"
-MESSAGE_ADD_FIELD_ARRAY( F64, fudge_f64 );
-
-#define DOC_fudgepyc_message_addField4ByteArray "TODO Method 4 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 4 );
-
-#define DOC_fudgepyc_message_addField8ByteArray "TODO Method 8 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 8 );
-
-#define DOC_fudgepyc_message_addField16ByteArray "TODO Method 16 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 16 );
-
-#define DOC_fudgepyc_message_addField20ByteArray "TODO Method 20 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 20 );
-
-#define DOC_fudgepyc_message_addField32ByteArray "TODO Method 32 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 32 );
-
-#define DOC_fudgepyc_message_addField64ByteArray "TODO Method 64 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 64 );
-
-#define DOC_fudgepyc_message_addField128ByteArray "TODO Method 128 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 128 );
-
-#define DOC_fudgepyc_message_addField256ByteArray "TODO Method 256 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 256 );
-
-#define DOC_fudgepyc_message_addField512ByteArray "TODO Method 512 byte array doc"
-MESSAGE_ADD_FIELD_FIXED_ARRAY( Byte, fudge_byte, 512 );
-
-#define DOC_fudgepyc_message_addField "TODO Method add field doc"
+static const char DOC_fudgepyc_message_addField [] =
+    "\nAdds a field to the Message, with the type determined by that of value.\n"
+    "The Python types map to Fudge as follows:\n"
+    "\n"
+    "  - None: Indicator\n"
+    "  - bool: Boolean\n"
+    "  - int: Byte/Short/Int/Long (depends on bits required to hold value)\n"
+    "  - long: See previous\n"
+    "  - float: Double\n"
+    "  - String: String\n"
+    "  - Unicode: String\n"
+    "  - fudgepyc.Message: FudgeMsg\n"
+    "\n"
+    "All other types must be added using the explicitly typed methods. Field\n"
+    "name and ordinal are optional.\n"
+    "\n"
+    "@param value: field value\n"
+    "@param name: field name String, defaults to None\n"
+    "@param ordinal: field ordinal integer, defaults to None\n"
+    "@return: None or Exception on failure\n";
 PyObject * Message_addField ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "value", "name", "ordinal", 0 };
@@ -511,7 +531,11 @@ clean_and_fail:
     }
 }
 
-#define DOC_fudgepyc_message_getFieldAtIndex "TODO Method get field at index doc"
+static const char DOC_fudgepyc_message_getFieldAtIndex [] =
+    "\nGet the field at the given index. Throws an exception if the index is\n"
+    "invalid.\n\n"
+    "@param index: field index integer\n"
+    "@return fudgepyc.Field or throws fudgepyc.Exception if index not valid\n";
 PyObject * Message_getFieldAtIndex ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "index", 0 };
@@ -529,7 +553,11 @@ PyObject * Message_getFieldAtIndex ( Message * self, PyObject * args, PyObject *
     return Field_create ( field, self );
 }
 
-#define DOC_fudgepyc_message_getFieldByName "TODO Method get field by name doc"
+static const char DOC_fudgepyc_message_getFieldByName [] =
+    "\nGet the first field with the given name. Returns None if no such field\n"
+    "is found.\n\n"
+    "@param name: field name String/Unicode\n"
+    "@return fudgepyc.Field or None if name not found\n";
 PyObject * Message_getFieldByName ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "name", 0 };
@@ -547,7 +575,11 @@ PyObject * Message_getFieldByName ( Message * self, PyObject * args, PyObject * 
     return obj;
 }
 
-#define DOC_fudgepyc_message_getFieldByOrdinal "TODO Method get field by ordinal doc"
+static const char DOC_fudgepyc_message_getFieldByOrdinal [] =
+    "\nGet the first field with the given ordinal. Returns None if no such\n"
+    "field is found.\n\n"
+    "@param ordinal: field ordinal integer\n"
+    "@return fudgepyc.Field or None if ordinal not found\n";
 PyObject * Message_getFieldByOrdinal ( Message * self, PyObject * args, PyObject * kwds )
 {
     static char * kwlist [] = { "ordinal", 0 };
@@ -559,7 +591,9 @@ PyObject * Message_getFieldByOrdinal ( Message * self, PyObject * args, PyObject
     return Message_getFieldWithOrdinal ( self, ordinal, 0 );
 }
 
-#define DOC_fudgepyc_message_getFields "TODO Method get fields doc"
+static const char DOC_fudgepyc_message_getFields [] =
+    "\nGet all the fields in the message, in insertion order.\n\n"
+    "@return [fudgepyc.Field, ...]\n";
 PyObject * Message_getFields ( Message * self )
 {
     FudgeField * source;
@@ -698,8 +732,6 @@ PyMappingMethods Message_as_mapping =
     0                                   // mp_ass_subscript
 };
 
-#define DOC_fudgepyc_message "TODO Message documentation"
-
 PyTypeObject MessageType =
 {
     PyObject_HEAD_INIT( NULL )
@@ -747,6 +779,9 @@ PyTypeObject MessageType =
 /****************************************************************************
  * Type functions
  */
+
+/* TODO Add Message_modinit function and change Message dictionary to add
+   documentation for __getitem__. */
 
 PyObject * Message_create ( FudgeMsg msg )
 {

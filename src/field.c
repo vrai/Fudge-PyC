@@ -26,6 +26,15 @@ static PyObject * s_typesmodule = 0,
  * Constructor/destructor implementations
  */
 
+static const char DOC_fudgepyc_field [] =
+    "\nfudgepyc.Field contains a single fudgepyc.Message field. All Field\n"
+    "instances hold a reference to their parent Message, so a Message\n"
+    "instance will not be destroyed until all Fields referencing it have\n"
+    "first been destroyed.\n"
+    "\n"
+    "The only way to create a Field is using one of the getter methods on a\n"
+    "Message instance. Calling the Field construct will result in a\n"
+    "fudgepyc.Exception being thrown.\n";
 static int Field_init ( Field * self, PyObject * args, PyObject * kwds )
 {
     exception_raise_any ( PyExc_NotImplementedError,
@@ -52,7 +61,11 @@ static void Field_dealloc ( Field * self )
  * Method helper macros
  */
 
-#define FIELD_GET_TYPE( TYPENAME, TYPEID )                                  \
+#define FIELD_GET_TYPE( TYPENAME, TYPEID, PYSTR, FUDGESTR )                 \
+    static const char DOC_fudgepyc_field_get ## TYPENAME [] =               \
+    "\nGet the Field value as a " PYSTR ", if it is of the Fudge type\n"    \
+    FUDGESTR ".\n\n"                                                        \
+    "@return: " PYSTR ", or fudgepyc.Exception if of incorrect type\n";     \
 PyObject * Field_get ## TYPENAME ( Field * self )                           \
 {                                                                           \
     if ( self->field.type == TYPEID )                                       \
@@ -62,7 +75,10 @@ PyObject * Field_get ## TYPENAME ( Field * self )                           \
     return 0;                                                               \
 }
 
-#define FIELD_GET_AS_SCALAR_TYPE( TYPENAME, CTYPE )                         \
+#define FIELD_GET_AS_SCALAR_TYPE( TYPENAME, CTYPE, PYSTR )                  \
+static const char DOC_fudgepyc_field_getAs ## TYPENAME [] =                 \
+"\nGet the field value as " PYSTR ", if Fudge can coerce the value.\n\n"    \
+"@return: " PYSTR ", or fudgepyc.Exception if the coercion fails\n";        \
 PyObject * Field_getAs ## TYPENAME ( Field * self )                         \
 {                                                                           \
     FudgeStatus status;                                                     \
@@ -131,7 +147,28 @@ size_t Field_len ( Field * self )
     }
 }
 
-#define DOC_fudgepyc_field_value "TODO Field value doc"
+static const char DOC_fudgepyc_field_value [] =
+"\nGet the Field's value as a Python object. The Fudge field types map to\n"
+"Python as follows:\n"
+"\n"
+"  - Indicator: None\n"
+"  - Boolean: bool\n"
+"  - Byte: int\n"
+"  - Short: int\n"
+"  - Int: int\n"
+"  - Long: long\n"
+"  - Float: float\n"
+"  - Double: float\n"
+"  - Byte[]: String\n"
+"  - Short[]: List of int\n"
+"  - Int[]: List of int\n"
+"  - Long[]: List of long\n"
+"  - Float[]: List of float\n"
+"  - Double[]: List fo double\n"
+"  - String: Unicode\n"
+"  - FudgeMsg: fudgepyc.Message\n"
+"\n"
+"@return: Python object containing the Field value\n";
 PyObject * Field_value ( Field * self )
 {
     switch ( self->field.type )
@@ -194,7 +231,7 @@ PyObject * Field_value ( Field * self )
         case FUDGE_TYPE_DATETIME:
             /* TODO Implement date/time support */
             exception_raise_any ( PyExc_NotImplementedError,
-                                  "Date/time support no complete" );
+                                  "Date/time support not complete" );
             return 0;
 
         default:
@@ -204,7 +241,9 @@ PyObject * Field_value ( Field * self )
     }
 }
 
-#define DOC_fudgepyc_field_name "TODO Field name doc"
+static const char DOC_fudgepyc_field_name [] =
+    "\nGet the Field's name, if it has one\n\n"
+    "@return: String containing the Field name, or None if not present\n";
 PyObject * Field_name ( Field * field )
 {
     if ( field->field.flags & FUDGE_FIELD_HAS_NAME )
@@ -213,7 +252,9 @@ PyObject * Field_name ( Field * field )
         Py_RETURN_NONE;
 }
 
-#define DOC_fudgepyc_field_ordinal "TODO Field ordinal doc"
+static const char DOC_fudgepyc_field_ordinal [] =
+    "\nGet the Field's ordinal, if it has one\n\n"
+    "@return: ordinal integer, or None if not present\n";
 PyObject * Field_ordinal ( Field * field )
 {
     if ( field->field.flags & FUDGE_FIELD_HAS_ORDINAL )
@@ -222,19 +263,28 @@ PyObject * Field_ordinal ( Field * field )
         Py_RETURN_NONE;
 }
 
-#define DOC_fudgepyc_field_type "TODO Field type doc"
+static const char DOC_fudgepyc_field_type  [] =
+    "\nGet the Fudge type of Field's value. See fudgepyc.types for a list of\n"
+    "types and their names\n\n"
+    "@return: type integer\n";
 PyObject * Field_type ( Field * field )
 {
     return PyInt_FromLong ( field->field.type );
 }
 
-#define DOC_fudgepyc_field_numbytes "TODO Field numbytes doc"
+static const char DOC_fudgepyc_field_numbytes [] =
+    "\nGet the number of bytes used by non-scalar values (e.g. string,\n"
+    "message, arrays, etc).\n\n"
+    "@return: number of bytes or zero if scalar type\n";
 PyObject * Field_numbytes ( Field * field )
 {
     return PyInt_FromLong ( field->field.numbytes );
 }
 
-#define DOC_fudgepyc_field_bytes "TODO Field bytes doc"
+static const char DOC_fudgepyc_field_bytes [] =
+    "\nThe Field value as a String containing the raw bytes. Only applicable\n"
+    "to arrays (of all types) and unknown (i.e. user) types.\n\n"
+    "@return: String containing bytes, or fudgepyc.Exception if wrong type\n";
 PyObject * Field_bytes ( Field * self )
 {
     if ( ( self->field.type >= FUDGE_TYPE_BYTE_ARRAY &&
@@ -249,34 +299,27 @@ PyObject * Field_bytes ( Field * self )
     return 0;
 }
 
-#define DOC_fudgepyc_field_getBool "TODO Field getBool doc"
-FIELD_GET_TYPE( Bool, FUDGE_TYPE_BOOLEAN )
+FIELD_GET_TYPE( Bool,     FUDGE_TYPE_BOOLEAN,      "bool",         "Boolean" )
+FIELD_GET_TYPE( Byte,     FUDGE_TYPE_BYTE,         "int",          "Byte" )
+FIELD_GET_TYPE( I16,      FUDGE_TYPE_SHORT,        "int",          "Short" )
+FIELD_GET_TYPE( I32,      FUDGE_TYPE_INT,          "int",          "Int" )
+FIELD_GET_TYPE( I64,      FUDGE_TYPE_LONG,         "long",         "Long" )
+FIELD_GET_TYPE( F32,      FUDGE_TYPE_FLOAT,        "float",        "Float" )
+FIELD_GET_TYPE( F64,      FUDGE_TYPE_DOUBLE,       "float",        "Double" )
+FIELD_GET_TYPE( Msg,      FUDGE_TYPE_FUDGE_MSG,    "Message",      "FudgeMsg" )
+FIELD_GET_TYPE( String,   FUDGE_TYPE_STRING,       "Unicode",      "String" )
 
-#define DOC_fudgepyc_field_getByte "TODO Field getByte doc"
-FIELD_GET_TYPE( Byte, FUDGE_TYPE_BYTE )
+FIELD_GET_TYPE( I16Array, FUDGE_TYPE_SHORT_ARRAY,  "[int, ...]",   "Short[]" )
+FIELD_GET_TYPE( I32Array, FUDGE_TYPE_INT_ARRAY,    "[int, ...]",   "Int[]" )
+FIELD_GET_TYPE( I64Array, FUDGE_TYPE_LONG_ARRAY,   "[long, ...]",  "Long[]" )
+FIELD_GET_TYPE( F32Array, FUDGE_TYPE_FLOAT_ARRAY,  "[float, ...]", "Float[]" )
+FIELD_GET_TYPE( F64Array, FUDGE_TYPE_DOUBLE_ARRAY, "[float, ...]", "Double[]" )
 
-#define DOC_fudgepyc_field_getI16 "TODO Field getI16 doc"
-FIELD_GET_TYPE( I16, FUDGE_TYPE_SHORT )
-
-#define DOC_fudgepyc_field_getI32 "TODO Field getI32 doc"
-FIELD_GET_TYPE( I32, FUDGE_TYPE_INT )
-
-#define DOC_fudgepyc_field_getI64 "TODO Field getI64 doc"
-FIELD_GET_TYPE( I64, FUDGE_TYPE_LONG )
-
-#define DOC_fudgepyc_field_getF32 "TODO Field getF32 doc"
-FIELD_GET_TYPE( F32, FUDGE_TYPE_FLOAT )
-
-#define DOC_fudgepyc_field_getF64 "TODO Field getF64 doc"
-FIELD_GET_TYPE( F64, FUDGE_TYPE_DOUBLE )
-
-#define DOC_fudgepyc_field_getMsg "TODO Field getMsg doc"
-FIELD_GET_TYPE( Msg, FUDGE_TYPE_FUDGE_MSG )
-
-#define DOC_fudgepyc_field_getString "TODO Field getString doc"
-FIELD_GET_TYPE( String, FUDGE_TYPE_STRING )
-
-#define DOC_fudgepyc_field_getByteArray "TODO Field getByteArray doc"
+static const char DOC_fudgepyc_field_getByteArray [] =
+"\nGet the field value as a [int, ...], if it is a byte array (either\n"
+"fixed or variable width. To get the bytes as a String, use\n"
+"fudgepyc.Field.bytes or fudgepyc.Field.value\n\n"
+"@return: [int, ...], or fudgepyc.Exception if of incorrect type\n";
 PyObject * Field_getByteArray ( Field * field )
 {
     if ( field->field.type == FUDGE_TYPE_BYTE_ARRAY ||
@@ -289,22 +332,9 @@ PyObject * Field_getByteArray ( Field * field )
     return 0;
 }
 
-#define DOC_fudgepyc_field_getI16Array "TODO Field getInt16Array doc"
-FIELD_GET_TYPE( I16Array, FUDGE_TYPE_SHORT_ARRAY );
-
-#define DOC_fudgepyc_field_getI32Array "TODO Field getInt32Array doc"
-FIELD_GET_TYPE( I32Array, FUDGE_TYPE_INT_ARRAY );
-
-#define DOC_fudgepyc_field_getI64Array "TODO Field getInt64Array doc"
-FIELD_GET_TYPE( I64Array, FUDGE_TYPE_LONG_ARRAY );
-
-#define DOC_fudgepyc_field_getF32Array "TODO Field getFloat32Array doc"
-FIELD_GET_TYPE( F32Array, FUDGE_TYPE_FLOAT_ARRAY );
-
-#define DOC_fudgepyc_field_getF64Array "TODO Field getFloat64Array doc"
-FIELD_GET_TYPE( F64Array, FUDGE_TYPE_DOUBLE_ARRAY );
-
-#define DOC_fudgepyc_field_getAsBool "TODO Field getAsBool doc"
+static const char DOC_fudgepyc_field_getAsBool [] =
+"\nGet the field value as bool, if Fudge can coerce the value.\n\n"
+"@return: bool, or fudgepyc.Exception if the coercion fails\n";
 PyObject * Field_getAsBool ( Field * self )
 {
     fudge_bool target;
@@ -314,23 +344,12 @@ PyObject * Field_getAsBool ( Field * self )
     return fudgepyc_convertBoolToPython ( target );
 }
 
-#define DOC_fudgepyc_field_getAsByte "TODO Field getAsByte doc"
-FIELD_GET_AS_SCALAR_TYPE( Byte, fudge_byte )
-
-#define DOC_fudgepyc_field_getAsI16 "TODO Field getAsI16 doc"
-FIELD_GET_AS_SCALAR_TYPE( I16, fudge_i16 )
-
-#define DOC_fudgepyc_field_getAsI32 "TODO Field getAsI32 doc"
-FIELD_GET_AS_SCALAR_TYPE( I32, fudge_i32 )
-
-#define DOC_fudgepyc_field_getAsI64 "TODO Field getAsI64 doc"
-FIELD_GET_AS_SCALAR_TYPE( I64, fudge_i64 )
-
-#define DOC_fudgepyc_field_getAsF32 "TODO Field getAsF32 doc"
-FIELD_GET_AS_SCALAR_TYPE( F32, fudge_f32 )
-
-#define DOC_fudgepyc_field_getAsF64 "TODO Field getAsF64 doc"
-FIELD_GET_AS_SCALAR_TYPE( F64, fudge_f64 )
+FIELD_GET_AS_SCALAR_TYPE( Byte, fudge_byte, "8-bit int" )
+FIELD_GET_AS_SCALAR_TYPE( I16,  fudge_i16,  "16-bit int" )
+FIELD_GET_AS_SCALAR_TYPE( I32,  fudge_i32,  "int" )
+FIELD_GET_AS_SCALAR_TYPE( I64,  fudge_i64,  "long" )
+FIELD_GET_AS_SCALAR_TYPE( F32,  fudge_f32,  "float" )
+FIELD_GET_AS_SCALAR_TYPE( F64,  fudge_f64,  "float" )
 
 PyObject * Field_int ( Field * self )
 {
@@ -595,8 +614,6 @@ PyNumberMethods Field_as_number =
     0,                                      /* nb_inplace_true_divide */
     0                                       /* nb_index */
 };
-
-#define DOC_fudgepyc_field "TODO Field documentation"
 
 PyTypeObject FieldType =
 {
