@@ -1,9 +1,9 @@
 INSTALLATION INSTRUCTIONS FOR Fudge-PyC
 =============================================================================
 
-The build process has been tested on OS X Lion (64bit) and Redhat Linux 2.6
-(32bit); against Python 2.5 and 2.7. Any modern version of Python 2.x on a
-Unix-like environment should be sypported.
+The build process has been tested on OS X Lion (64bit), Redhat Linux 2.6
+(32bit) and Ubuntu 9.10 (64bit); against Python 2.5 and 2.7. Any modern
+version of Python 2.x on a Unix-like environment should be supported.
 
 
 Building the package on a Unix-like system
