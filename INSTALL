@@ -1,0 +1,57 @@
+INSTALLATION INSTRUCTIONS FOR Fudge-PyC
+=============================================================================
+
+The build process has been tested on OS X Lion (64bit) and Redhat Linux 2.6
+(32bit); against Python 2.5 and 2.7. Any modern version of Python 2.x on a
+Unix-like environment should be sypported.
+
+
+Building the package on a Unix-like system
+------------------------------------------
+
+The package depends on Fudge-C and Python; so ensure that both of these are
+installed. As Fudge-PyC uses distutils the build process is the standard one
+for Python modules:
+
+  $ python setup.py build
+
+This assumes that Fudge-C has been installed in a standard location (usually
+/usr/include and /usr/lib). If the library is in a non-standard location pass
+the additional build flags to build_ext (not build, it won't accept them);
+then run the main build target as normal. For example:
+
+  $ python setup.py build_ext -I/usr/local/fudgec/include \
+                              -L/usr/local/fudgec/lib \
+                              -R/usr/local/fudgec/lib
+  $ python setup.py build
+
+The Fudge-PyC package contains unittests (that are based off the Fudge-Cpp
+test suite). These can be run with the non-standard target test:
+
+  $ python setup.py test
+
+More verbose test output (standard Python unittest text output)  will be
+produced if the target is run with the verbose flag:
+
+  $ python setup.py -v test
+
+To install the package the install target is used. As most system directories
+are owned by root it will be necessary to run this as a super-user or via the
+sudo command:
+
+  $ sudo python setup.py install
+
+If the installation has been successful then the following should run without
+error:
+
+  $ python
+  >>> import fudgepyc
+  >>> import fudgepyc.types
+  >>> fudgepyc.init ( )
+
+The usual distutils options are available, such as --prefix if you don't want
+the package to be installed in the site-packages directory. More details can
+be found using:
+
+  $ python setup.py --help
+

@@ -188,8 +188,8 @@ PyObject * Envelope_decode ( PyTypeObject * type, PyObject * args, PyObject * kw
     if ( exception_raiseOnError ( status ) )
         return 0;
 
-    if ( ! ( target = Envelope_create ( envlpe ) ) )
-        FudgeMsgEnvelope_release ( envlpe );
+    target = Envelope_create ( envlpe );
+    FudgeMsgEnvelope_release ( envlpe );
     return target;
 }
 

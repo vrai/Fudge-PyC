@@ -292,24 +292,24 @@ class CodecTestCase ( TestCase ):
     def testEncodeAllOrdinals ( self ):
         # Construct the message
         message1 = Message ( )
-        message1.addField ( True,         ordinal = 1 )
+        message1.addField ( True,         ordinal = 1,  type = fudgepyc.types.BOOLEAN )
         message1.addField ( False,        ordinal = 2 )
-        message1.addField ( 5,            ordinal = 3 )
+        message1.addField ( 5,            ordinal = 3,  type = fudgepyc.types.BYTE )
         message1.addField ( 5,            ordinal = 4 )
-        message1.addField ( 132,          ordinal = 5 )
+        message1.addField ( 132,          ordinal = 5,  type = fudgepyc.types.SHORT )
         message1.addField ( 132,          ordinal = 6 )
-        message1.addField ( 32772,        ordinal = 7 )
+        message1.addField ( 32772,        ordinal = 7,  type = fudgepyc.types.INT )
         message1.addField ( 32772,        ordinal = 8 )
-        message1.addField ( 2147483652l,  ordinal = 9 )
+        message1.addField ( 2147483652l,  ordinal = 9,  type = fudgepyc.types.LONG )
         message1.addField ( 2147483652l,  ordinal = 10 )
-        message1.addFieldF32 ( 0.5,       ordinal = 11 )
-        message1.addFieldF32 ( 0.5,       ordinal = 12 )
-        message1.addField ( 0.27362,      ordinal = 13 )
+        message1.addField ( 0.5,          ordinal = 11, type = fudgepyc.types.FLOAT )
+        message1.addField ( 0.5,          ordinal = 12, type = fudgepyc.types.FLOAT )
+        message1.addField ( 0.27362,      ordinal = 13, type = fudgepyc.types.DOUBLE )
         message1.addField ( 0.27362,      ordinal = 14 )
-        message1.addField ( 'Kirk Wylie', ordinal = 15 )
+        message1.addField ( 'Kirk Wylie', ordinal = 15, type = fudgepyc.types.STRING )
 
-        message1.addFieldF32Array ( [ 0.0 ] * 24,  ordinal = 16 )
-        message1.addFieldF64Array ( [ 0.0 ] * 273, ordinal = 17 )
+        message1.addField ( [ 0.0 ] * 24,  ordinal = 16, type = fudgepyc.types.FLOAT_ARRAY )
+        message1.addField ( [ 0.0 ] * 273, ordinal = 17, type = fudgepyc.types.DOUBLE_ARRAY )
 
         # Encode it and compare against the test file
         encoded = Envelope ( message1 ).encode ( )
@@ -349,7 +349,7 @@ class CodecTestCase ( TestCase ):
         submessage = Message ( )
         submessage.addField ( 9837438,  name = 'bibble9' )
         submessage.addFieldF32 ( 82.77, ordinal = 828 )
-        message1.addField ( submessage, name = 'sub2' )
+        message1.addField ( submessage, name = 'sub2', type = fudgepyc.types.MESSAGE )
 
         # Encode it and compare against the test file
         encoded = Envelope ( message1 ).encode ( )

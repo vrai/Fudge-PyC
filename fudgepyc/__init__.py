@@ -16,6 +16,7 @@
 
 from fudgepyc.impl import __doc__, \
                           __file__, \
+                          __version__, \
                           init, \
                           Envelope, \
                           Exception, \

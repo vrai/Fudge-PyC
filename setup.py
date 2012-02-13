@@ -64,6 +64,7 @@ class TestCommand ( Command ):
     # The unit test output is passed to "announce" and so is visible if
     # setup.py is run with the verbose flag.
     user_options = [ ]
+    description = 'run package unit tests'
 
     def initialize_options ( self ):
         self.__testdirs = None
@@ -120,7 +121,8 @@ _depends = { 'impl' : [ 'converters.h',
                         'exception.h',
                         'field.h',
                         'message.h',
-                        'modulemethods.h' ],
+                        'modulemethods.h',
+                        'version.h' ],
              'types' : [ ] }
 
 setup ( name = 'Fudge-PyC',
@@ -134,7 +136,7 @@ setup ( name = 'Fudge-PyC',
         author = 'Vrai Stacey',
         author_email = 'vrai.stacey@gmail.com',
         url = 'http://github.com/vrai/Fudge-PyC',
-        license = 'Apache License, version 2.0',
+        license = 'APL2',
         long_description = """\
 Python wrapper around the Fudge-C implementation of the Fudge message
 encoding specification (see http://fudgemsg.org/ for details).

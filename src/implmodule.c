@@ -17,6 +17,7 @@
 #include "envelope.h"
 #include "field.h"
 #include "modulemethods.h"
+#include "version.h"
 
 typedef struct
 {
@@ -39,7 +40,56 @@ static PyMethodDef module_methods [] =
     { NULL }
 };
 
-#define DOC_fudgepyc_module "TODO Module documentation"
+static const char DOC_fudgepyc_module [] =
+    "\nFudge-PyC provides a Python wrapper around the Fudge-C implementation\n"
+    "of the Fudge message encoding specification. This interface is similar to\n"
+    "Fudge-C but uses Python idioms (objects and exceptions rather than\n"
+    "struct and return values).\n"
+    "\n"
+    "Like Fudge-C the library is safe to use across multiple threads, but\n"
+    "individual objects (Envelope, Field, Message) must not be used across\n"
+    "multiple threads concurrently. The library will release the GIL during\n"
+    "potentially long running actions (encoding/decoding) and so can be used\n"
+    "to handle multiple messages concurrent - just as long as each Message\n"
+    "is only manipulated by one thread at any given time.\n"
+    "\n"
+    "Before Fudge-PyC can be used, the fudgepyc.init method must be called.\n"
+    "This initialises various structures used by Fudge-C (such as the type\n"
+    "registry) and can be called multiple times without any problems; only the\n"
+    "first call actually does anything.\n"
+    "\n"
+    "Simple example:\n"
+    "  >>> from fudgepyc import init, Envelope, Field, Message\n"
+    "  >>> import fudgepyc.types\n"
+    "  >>> init ( )\n"
+    "  >>> message = Message ( )\n"
+    "  >>> message.addField ( True, 'bool field' )\n"
+    "  >>> message.addFieldF32 ( 1.23, '32bit float' )\n"
+    "  >>> message.addField ( 'A string', 'string field', 1 )\n"
+    "  >>> print len ( message )\n"
+    "  3\n"
+    "  >>> encoded = Envelope ( message ).encode ( )\n"
+    "  >>> print type ( encoded ), len ( encoded )\n"
+    "  <type 'str'> 66\n"
+    "  >>> message = Envelope.decode ( encoded ).message ( )\n"
+    "  >>> print len ( message )\n"
+    "  3\n"
+    "  >>> print message.getFieldAtIndex ( 0 ).value ( )\n"
+    "  True\n"
+    "  >>> print message [ 1 ].value ( )\n"
+    "  A string\n"
+    "  >>> field = message [ '32bit float' ]\n"
+    "  >>> print fudgepyc.types.TYPE_NAMES [ field.type ( ) ]\n"
+    "  float\n"
+    "  >>> print type ( field.value ( ) )\n"
+    "  <type 'float'>\n"
+    "  >>> print '%.2f' % float ( field )\n"
+    "  1.23\n"
+    "\n"
+    "As well as the main fudgepyc module there is fudgepyc.types. This\n"
+    "contains a list of enumerations for each Fudge type as well as a\n"
+    "dictionary (fudgepyc.TYPE_NAMES) mapping each type to a human readable\n"
+    "name.\n";
 
 PyMODINIT_FUNC initimpl ( void )
 {
@@ -53,6 +103,8 @@ PyMODINIT_FUNC initimpl ( void )
 
     if ( exception_init ( module ) )
         goto clean_and_fail;
+
+    PyModule_AddStringConstant ( module, "__version__", fudgepyc_version );
 
     for ( mtdef = module_types; mtdef->name; ++mtdef )
     {

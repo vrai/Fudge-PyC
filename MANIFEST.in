@@ -1,4 +1,4 @@
 recursive-include	src	*.h
 recursive-include	tests   *
-include MANIFEST.in
+include INSTALL LICENSE MANIFEST.in README
 global-exclude *.pyc

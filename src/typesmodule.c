@@ -15,8 +15,7 @@
  */
 #include <Python.h>
 #include <fudge/types.h>
-
-#define DOC_fudgepyc_typesmodule "TODO Types Module documentation"
+#include "version.h"
 
 typedef struct
 {
@@ -67,6 +66,13 @@ static PyMethodDef module_methods [] =
     { NULL }
 };
 
+static const char DOC_fudgepyc_typesmodule [] =
+    "\nThe types module of Fudge-PyC provides enumerations for all the built-\n"
+    "in Fudge types. The enumeration names are identical to the types in\n"
+    "fudge/types.h, with the FUDGE_TYPE_ leader removed.\n\n"
+    "The module also provides a dictionary, fudgepyc.types.TYPE_NAMES, that\n"
+    "maps these enumerations to human readable strings.\n";
+
 PyMODINIT_FUNC inittypes ( void )
 {
     PyObject * module = 0,
@@ -79,6 +85,8 @@ PyMODINIT_FUNC inittypes ( void )
                                        module_methods,
                                        DOC_fudgepyc_typesmodule ) ) )
         goto clean_and_fail;
+
+    PyModule_AddStringConstant ( module, "__version__", fudgepyc_version );
 
     if ( ! ( namedict = PyDict_New ( ) ) )
         goto clean_and_fail;

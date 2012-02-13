@@ -61,6 +61,185 @@ static void Message_dealloc ( Message * self )
 
 
 /****************************************************************************
+ * Method helper macros
+ */
+
+#define MESSAGE_ADD_FIELD_SCALAR_IMPL( TYPENAME, CTYPE, CLEANUP )           \
+static PyObject * Message_addField ## TYPENAME ## Impl (                    \
+           Message * self,                                                  \
+           PyObject * valobj,                                               \
+           PyObject * nameobj,                                              \
+           PyObject * ordobj )                                              \
+{                                                                           \
+    FudgeStatus status;                                                     \
+    FudgeString name = 0;                                                   \
+    fudge_i16 ordinal;                                                      \
+    CTYPE value;                                                            \
+                                                                            \
+    if ( fudgepyc_convertPythonTo ## TYPENAME ( &value, valobj ) )          \
+        return 0;                                                           \
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
+        return 0;                                                           \
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
+        return 0;                                                           \
+                                                                            \
+    status = FudgeMsg_addField ## TYPENAME ( self->msg,                     \
+                                             name,                          \
+                                             ordobj ? &ordinal : 0,         \
+                                             value );                       \
+    FudgeString_release ( name );                                           \
+    CLEANUP                                                                 \
+                                                                            \
+    if ( exception_raiseOnError ( status ) )                                \
+        return 0;                                                           \
+    Py_RETURN_NONE;                                                         \
+}
+
+#define MESSAGE_ADD_FIELD_ARRAY_IMPL( TYPENAME, CTYPE )                     \
+static PyObject * Message_addField ## TYPENAME ## ArrayImpl (               \
+           Message * self,                                                  \
+           PyObject * valobj,                                               \
+           PyObject * nameobj,                                              \
+           PyObject * ordobj )                                              \
+{                                                                           \
+    FudgeStatus status;                                                     \
+    FudgeString name = 0;                                                   \
+    fudge_i16 ordinal;                                                      \
+    CTYPE * array;                                                          \
+    fudge_i32 size;                                                         \
+                                                                            \
+    if ( fudgepyc_convertPythonTo ## TYPENAME ## Array ( &array,            \
+                                                         &size,             \
+                                                         valobj ) )         \
+        return 0;                                                           \
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
+        return 0;                                                           \
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
+        return 0;                                                           \
+                                                                            \
+    status = FudgeMsg_addField ## TYPENAME ## Array ( self->msg,            \
+                                                      name,                 \
+                                                      ordobj ? &ordinal : 0,\
+                                                      array,                \
+                                                      size );               \
+    PyMem_Free ( array );                                                   \
+    FudgeString_release ( name );                                           \
+                                                                            \
+    if ( exception_raiseOnError ( status ) )                                \
+        return 0;                                                           \
+    Py_RETURN_NONE;                                                         \
+}
+
+#define MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( WIDTH )                         \
+static PyObject * Message_addField ## WIDTH ## ByteArrayImpl (              \
+           Message * self,                                                  \
+           PyObject * valobj,                                               \
+           PyObject * nameobj,                                              \
+           PyObject * ordobj )                                              \
+{                                                                           \
+    FudgeStatus status;                                                     \
+    FudgeString name = 0;                                                   \
+    fudge_i16 ordinal;                                                      \
+    fudge_byte array [ WIDTH ];                                             \
+                                                                            \
+    if ( fudgepyc_convertPythonToFixedByteArray ( array, WIDTH, valobj ) )  \
+        return 0;                                                           \
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
+        return 0;                                                           \
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
+        return 0;                                                           \
+                                                                            \
+    status = FudgeMsg_addField ## WIDTH ## ByteArray (                      \
+                 self->msg, name, ordobj ? &ordinal : 0, array );           \
+    FudgeString_release ( name );                                           \
+                                                                            \
+    if ( exception_raiseOnError ( status ) )                                \
+        return 0;                                                           \
+    Py_RETURN_NONE;                                                         \
+}
+
+#define MESSAGE_ADD_FIELD_SCALAR( TYPENAME, PYSTR, FUDGESTR )               \
+static const char DOC_fudgepyc_message_addField ## TYPENAME [] =            \
+    "Adds a " FUDGESTR " field to the Message; value must be of Python "    \
+    "type\n" PYSTR ". Field name and ordinal are optional.\n\n"             \
+    "@param value: field value, of type " PYSTR "\n"                        \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
+PyObject * Message_addField ## TYPENAME ( Message * self,                   \
+                                          PyObject * args,                  \
+                                          PyObject * kwds )                 \
+{                                                                           \
+    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
+                                                                            \
+    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
+                                                                            \
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
+                                         &valobj,                           \
+                                         &nameobj,                          \
+                                         &PyInt_Type, &ordobj ) )           \
+        return 0;                                                           \
+                                                                            \
+    return Message_addField ## TYPENAME ## Impl (                           \
+               self, valobj, nameobj, ordobj );                             \
+}
+
+#define MESSAGE_ADD_FIELD_ARRAY( TYPENAME, PYSTR, FUDGESTR )                \
+static const char DOC_fudgepyc_message_addField ## TYPENAME ## Array [] =   \
+    "Adds a " FUDGESTR " field to the Message; value must be of Python\n"   \
+    "type " PYSTR ". Field name and ordinal are optional.\n\n"              \
+    "@param value: field value\n"                                           \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
+PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
+                                                   PyObject * args,         \
+                                                   PyObject * kwds )        \
+{                                                                           \
+    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
+                                                                            \
+    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
+                                                                            \
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
+                                         &valobj,                           \
+                                         &nameobj,                          \
+                                         &PyInt_Type, &ordobj ) )           \
+        return 0;                                                           \
+                                                                            \
+    return Message_addField ## TYPENAME ## ArrayImpl (                      \
+               self, valobj, nameobj, ordobj );                             \
+}
+
+#define MESSAGE_ADD_FIELD_FIXED_ARRAY( WIDTH )                              \
+static const char DOC_fudgepyc_message_addField ## WIDTH ## ByteArray [] =  \
+    "Adds a Byte[" #WIDTH "] field to the Message; value must be of\n"      \
+    "Python type String, Unicode or [int, ...] and have a length of "       \
+    #WIDTH ".\nField name and ordinal are optional.\n\n"                   \
+    "@param value: field value\n"                                           \
+    "@param name: field name String, defaults to None\n"                    \
+    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@return: None or Exception on failure\n";                              \
+PyObject * Message_addField ## WIDTH ## ByteArray (                         \
+               Message * self,                                              \
+               PyObject * args,                                             \
+               PyObject * kwds )                                            \
+{                                                                           \
+    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
+                                                                            \
+    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
+                                                                            \
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
+                                         &valobj,                           \
+                                         &nameobj,                          \
+                                         &PyInt_Type, &ordobj ) )           \
+        return 0;                                                           \
+                                                                            \
+    return Message_addField ## WIDTH ## ByteArrayImpl (                     \
+               self, valobj, nameobj, ordobj );                             \
+}
+
+
+/****************************************************************************
  * Internal functions
  */
 
@@ -179,6 +358,25 @@ static int Message_createMsgDict ( Message * self )
     return 0;
 }
 
+int Message_getFudgeType ( fudge_type_id * type, PyObject * value )
+{
+    if ( value == Py_None )
+        *type = FUDGE_TYPE_INDICATOR;
+    else if ( PyBool_Check ( value ) )
+        *type = FUDGE_TYPE_BOOLEAN;
+    else if ( PyInt_Check ( value ) || PyLong_Check ( value ) )
+        *type = FUDGE_TYPE_LONG;
+    else if ( PyFloat_Check ( value ) )
+        *type = FUDGE_TYPE_DOUBLE;
+    else if ( PyString_Check ( value ) || PyUnicode_Check ( value ) )
+        *type = FUDGE_TYPE_STRING;
+    else if ( PyObject_IsInstance ( value, ( PyObject * ) &MessageType ) )
+        *type = FUDGE_TYPE_FUDGE_MSG;
+    else
+        return -1;
+    return 0;
+}
+
 static PyObject * Message_addFieldIndicatorImpl ( Message * self,
                                                   PyObject * nameobj,
                                                   PyObject * ordobj )
@@ -200,144 +398,60 @@ static PyObject * Message_addFieldIndicatorImpl ( Message * self,
     Py_RETURN_NONE;
 }
 
+static PyObject * Message_addFieldMsgImpl ( Message * self,
+                                            PyObject * msgobj,
+                                            PyObject * nameobj,
+                                            PyObject * ordobj )
+{
+    FudgeStatus status;
+    FudgeString name = 0;
+    fudge_i16 ordinal;
+    FudgeMsg message;
 
-/****************************************************************************
- * Method helper macros
- */
+    if ( fudgepyc_convertPythonToMsg ( &message, msgobj ) )
+        return 0;
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )
+        return 0;
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )
+        return 0;
 
-#define MESSAGE_ADD_FIELD_SCALAR( TYPENAME, CTYPE, PYSTR, FUDGESTR )        \
-static const char DOC_fudgepyc_message_addField ## TYPENAME [] =            \
-    "Adds a " FUDGESTR " field to the Message; value must be of Python "    \
-    "type\n" PYSTR ". Field name and ordinal are optional.\n\n"             \
-    "@param value: field value, of type " PYSTR "\n"                        \
-    "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
-    "@return: None or Exception on failure\n";                              \
-PyObject * Message_addField ## TYPENAME ( Message * self,                   \
-                                          PyObject * args,                  \
-                                          PyObject * kwds )                 \
-{                                                                           \
-    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
-                                                                            \
-    FudgeStatus status;                                                     \
-    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
-    FudgeString name = 0;                                                   \
-    fudge_i16 ordinal;                                                      \
-    CTYPE value;                                                            \
-                                                                            \
-    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
-                                         &valobj,                           \
-                                         &nameobj,                          \
-                                         &PyInt_Type, &ordobj ) )           \
-        return 0;                                                           \
-    if ( fudgepyc_convertPythonTo ## TYPENAME ( &value, valobj ) )          \
-        return 0;                                                           \
-    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
-        return 0;                                                           \
-    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
-        return 0;                                                           \
-                                                                            \
-    status = FudgeMsg_addField ## TYPENAME ( self->msg,                     \
-                                             name,                          \
-                                             ordobj ? &ordinal : 0,         \
-                                             value );                       \
-    FudgeString_release ( name );                                           \
-                                                                            \
-    if ( exception_raiseOnError ( status ) )                                \
-        return 0;                                                           \
-    Py_RETURN_NONE;                                                         \
+    status = FudgeMsg_addFieldMsg ( self->msg,
+                                    name,
+                                    ordobj ? &ordinal : 0,
+                                    message );
+    FudgeString_release ( name );
+    if ( exception_raiseOnError ( status ) )
+        return 0;
+
+    Message_storeMessage ( self, ( Message * ) msgobj );
+    Py_RETURN_NONE;
 }
 
-#define MESSAGE_ADD_FIELD_ARRAY( TYPENAME, CTYPE, PYSTR, FUDGESTR )         \
-static const char DOC_fudgepyc_message_addField ## TYPENAME ## Array [] =   \
-    "Adds a " FUDGESTR " field to the Message; value must be of Python\n"   \
-    "type " PYSTR ". Field name and ordinal are optional.\n\n"              \
-    "@param value: field value\n"                                           \
-    "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
-    "@return: None or Exception on failure\n";                              \
-PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
-                                                   PyObject * args,         \
-                                                   PyObject * kwds )        \
-{                                                                           \
-    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
-                                                                            \
-    FudgeStatus status;                                                     \
-    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
-    FudgeString name = 0;                                                   \
-    fudge_i16 ordinal;                                                      \
-    CTYPE * array;                                                          \
-    fudge_i32 size;                                                         \
-                                                                            \
-    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
-                                         &valobj,                           \
-                                         &nameobj,                          \
-                                         &PyInt_Type, &ordobj ) )           \
-        return 0;                                                           \
-    if ( fudgepyc_convertPythonTo ## TYPENAME ## Array ( &array,            \
-                                                         &size,             \
-                                                         valobj ) )         \
-        return 0;                                                           \
-    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
-        return 0;                                                           \
-    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
-        return 0;                                                           \
-                                                                            \
-    status = FudgeMsg_addField ## TYPENAME ## Array ( self->msg,            \
-                                                      name,                 \
-                                                      ordobj ? &ordinal : 0,\
-                                                      array,                \
-                                                      size );               \
-    PyMem_Free ( array );                                                   \
-    FudgeString_release ( name );                                           \
-                                                                            \
-    if ( exception_raiseOnError ( status ) )                                \
-        return 0;                                                           \
-    Py_RETURN_NONE;                                                         \
-}
+MESSAGE_ADD_FIELD_SCALAR_IMPL( Bool,   fudge_bool, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( Byte,   fudge_byte, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( I16,    fudge_i16, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( I32,    fudge_i32, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( I64,    fudge_i64, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( F32,    fudge_f32, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( F64,    fudge_f64, )
+MESSAGE_ADD_FIELD_SCALAR_IMPL( String, FudgeString, FudgeString_release ( value ); )
 
-#define MESSAGE_ADD_FIELD_FIXED_ARRAY( WIDTH )                              \
-static const char DOC_fudgepyc_message_addField ## WIDTH ## ByteArray [] =  \
-    "Adds a Byte[" #WIDTH "] field to the Message; value must be of\n"      \
-    "Python type String, Unicode or [int, ...] and have a length of "       \
-    #WIDTH ".\nField name and ordinal are optional.\n\n"                   \
-    "@param value: field value\n"                                           \
-    "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
-    "@return: None or Exception on failure\n";                              \
-PyObject * Message_addField ## WIDTH ## ByteArray (                         \
-               Message * self,                                              \
-               PyObject * args,                                             \
-               PyObject * kwds )                                            \
-{                                                                           \
-    static char * kwlist [] = { "value", "name", "ordinal", 0 };            \
-                                                                            \
-    FudgeStatus status;                                                     \
-    PyObject * ordobj = 0, * nameobj = 0, * valobj;                         \
-    FudgeString name = 0;                                                   \
-    fudge_i16 ordinal;                                                      \
-    fudge_byte array [ WIDTH ];                                             \
-                                                                            \
-    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,       \
-                                         &valobj,                           \
-                                         &nameobj,                          \
-                                         &PyInt_Type, &ordobj ) )           \
-        return 0;                                                           \
-    if ( fudgepyc_convertPythonToFixedByteArray ( array, WIDTH, valobj ) )  \
-        return 0;                                                           \
-    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
-        return 0;                                                           \
-    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
-        return 0;                                                           \
-                                                                            \
-    status = FudgeMsg_addField ## WIDTH ## ByteArray (                      \
-                 self->msg, name, ordobj ? &ordinal : 0, array );           \
-    FudgeString_release ( name );                                           \
-                                                                            \
-    if ( exception_raiseOnError ( status ) )                                \
-        return 0;                                                           \
-    Py_RETURN_NONE;                                                         \
-}
+MESSAGE_ADD_FIELD_ARRAY_IMPL( Byte, fudge_byte )
+MESSAGE_ADD_FIELD_ARRAY_IMPL( I16,  fudge_i16 )
+MESSAGE_ADD_FIELD_ARRAY_IMPL( I32,  fudge_i32 )
+MESSAGE_ADD_FIELD_ARRAY_IMPL( I64,  fudge_i64 )
+MESSAGE_ADD_FIELD_ARRAY_IMPL( F32,  fudge_f32 )
+MESSAGE_ADD_FIELD_ARRAY_IMPL( F64,  fudge_f64 )
+
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 4 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 8 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 16 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 20 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 32 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 64 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 128 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 256 );
+MESSAGE_ADD_FIELD_FIXED_ARRAY_IMPL( 512 );
 
 
 /****************************************************************************
@@ -395,14 +509,14 @@ PyObject * Message_addFieldIndicator ( Message * self, PyObject * args, PyObject
     return Message_addFieldIndicatorImpl ( self, nameobj, ordobj );
 }
 
-MESSAGE_ADD_FIELD_SCALAR( Bool,   fudge_bool,  "bool",           "Boolean" )
-MESSAGE_ADD_FIELD_SCALAR( Byte,   fudge_byte,  "int/long",       "Byte" )
-MESSAGE_ADD_FIELD_SCALAR( I16,    fudge_i16,   "int/long",       "Short" )
-MESSAGE_ADD_FIELD_SCALAR( I32,    fudge_i32,   "int/long",       "Int" )
-MESSAGE_ADD_FIELD_SCALAR( I64,    fudge_i64,   "int/long",       "Long" )
-MESSAGE_ADD_FIELD_SCALAR( F32,    fudge_f32,   "float",          "Float" )
-MESSAGE_ADD_FIELD_SCALAR( F64,    fudge_f64,   "float",          "Double" )
-MESSAGE_ADD_FIELD_SCALAR( String, FudgeString, "String/Unicode", "String" )
+MESSAGE_ADD_FIELD_SCALAR( Bool,   "bool",           "Boolean" )
+MESSAGE_ADD_FIELD_SCALAR( Byte,   "int/long",       "Byte" )
+MESSAGE_ADD_FIELD_SCALAR( I16,    "int/long",       "Short" )
+MESSAGE_ADD_FIELD_SCALAR( I32,    "int/long",       "Int" )
+MESSAGE_ADD_FIELD_SCALAR( I64,    "int/long",       "Long" )
+MESSAGE_ADD_FIELD_SCALAR( F32,    "float",          "Float" )
+MESSAGE_ADD_FIELD_SCALAR( F64,    "float",          "Double" )
+MESSAGE_ADD_FIELD_SCALAR( String, "String/Unicode", "String" )
 
 static const char DOC_fudgepyc_message_addFieldMsg [] =
     "\nAdds a Message field to the current Message; value must be a\n"
@@ -417,42 +531,23 @@ PyObject * Message_addFieldMsg ( Message * self, PyObject * args, PyObject * kwd
 {
     static char * kwlist [] = { "value", "name", "ordinal", 0 };
 
-    FudgeStatus status;
     PyObject * ordobj = 0, * nameobj = 0, * msgobj;
-    FudgeString name = 0;
-    fudge_i16 ordinal;
-    FudgeMsg message;
 
     if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O!|OO!", kwlist,
                                          &MessageType, &msgobj,
                                          &nameobj,
                                          &PyInt_Type, &ordobj ) )
         return 0;
-    if ( fudgepyc_convertPythonToMsg ( &message, msgobj ) )
-        return 0;
-    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )
-        return 0;
-    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )
-        return 0;
 
-    status = FudgeMsg_addFieldMsg ( self->msg,
-                                    name,
-                                    ordobj ? &ordinal : 0,
-                                    message );
-    FudgeString_release ( name );
-    if ( exception_raiseOnError ( status ) )
-        return 0;
-
-    Message_storeMessage ( self, ( Message * ) msgobj );
-    Py_RETURN_NONE;
+    return Message_addFieldMsgImpl ( self, msgobj, nameobj, ordobj );
 }
 
-MESSAGE_ADD_FIELD_ARRAY( Byte, fudge_byte, "String, Unicode or [int, ...]", "Byte[]" )
-MESSAGE_ADD_FIELD_ARRAY( I16,  fudge_i16,  "[int, ...]",                    "Short[]" )
-MESSAGE_ADD_FIELD_ARRAY( I32,  fudge_i32,  "[int, ...]",                    "Int[]" )
-MESSAGE_ADD_FIELD_ARRAY( I64,  fudge_i64,  "[int, ...]",                    "Long[]" )
-MESSAGE_ADD_FIELD_ARRAY( F32,  fudge_f32,  "[float, ...]",                  "Float[]" )
-MESSAGE_ADD_FIELD_ARRAY( F64,  fudge_f64,  "[float, ...]",                  "Double[]" )
+MESSAGE_ADD_FIELD_ARRAY( Byte, "String, Unicode or [int, ...]", "Byte[]" )
+MESSAGE_ADD_FIELD_ARRAY( I16,  "[int, ...]",                    "Short[]" )
+MESSAGE_ADD_FIELD_ARRAY( I32,  "[int, ...]",                    "Int[]" )
+MESSAGE_ADD_FIELD_ARRAY( I64,  "[int, ...]",                    "Long[]" )
+MESSAGE_ADD_FIELD_ARRAY( F32,  "[float, ...]",                  "Float[]" )
+MESSAGE_ADD_FIELD_ARRAY( F64,  "[float, ...]",                  "Double[]" )
 
 MESSAGE_ADD_FIELD_FIXED_ARRAY( 4 );
 MESSAGE_ADD_FIELD_FIXED_ARRAY( 8 );
@@ -465,8 +560,10 @@ MESSAGE_ADD_FIELD_FIXED_ARRAY( 256 );
 MESSAGE_ADD_FIELD_FIXED_ARRAY( 512 );
 
 static const char DOC_fudgepyc_message_addField [] =
-    "\nAdds a field to the Message, with the type determined by that of value.\n"
-    "The Python types map to Fudge as follows:\n"
+    "\nAdds a field to the Message. If the type is specified (should be\n"
+    "Fudge type, see fudgepyc.types) then the field is assumed to be that.\n"
+    "If no type is specified then the field type is determined by the type\n"
+    "of the value. The Python types map to Fudge as follows:\n"
     "\n"
     "  - None: Indicator\n"
     "  - bool: Boolean\n"
@@ -477,57 +574,102 @@ static const char DOC_fudgepyc_message_addField [] =
     "  - Unicode: String\n"
     "  - fudgepyc.Message: FudgeMsg\n"
     "\n"
-    "All other types must be added using the explicitly typed methods. Field\n"
-    "name and ordinal are optional.\n"
+    "All other types must be added using an explicity set type, or using one\n"
+    "of the named type adder methods. Field name and ordinal are optional.\n"
     "\n"
     "@param value: field value\n"
     "@param name: field name String, defaults to None\n"
     "@param ordinal: field ordinal integer, defaults to None\n"
+    "@param type: Fudge type id (0-255), defaults to None\n"
     "@return: None or Exception on failure\n";
 PyObject * Message_addField ( Message * self, PyObject * args, PyObject * kwds )
 {
-    static char * kwlist [] = { "value", "name", "ordinal", 0 };
+    static char * kwlist [] = { "value", "name", "ordinal", "type", 0 };
 
-    PyObject * ordobj = 0, * nameobj = 0, * valobj;
+    PyObject * ordobj = 0,
+             * nameobj = 0,
+             * typeobj = 0,
+             * valobj;
+    fudge_type_id fudgetype;
 
-    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!", kwlist,
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "O|OO!O!", kwlist,
                                          &valobj,
                                          &nameobj,
-                                         &PyInt_Type, &ordobj ) )
+                                         &PyInt_Type, &ordobj,
+                                         &PyInt_Type, &typeobj ) )
         return 0;
 
-    /* Figure out what type the value object is, then hand off to the correct
-       add field method */
-    if ( valobj == Py_None )
-        return Message_addFieldIndicatorImpl ( self, nameobj, ordobj );
-    else if ( PyBool_Check ( valobj ) )
-        return Message_addFieldBool ( self, args, kwds );
-    else if ( PyInt_Check ( valobj ) || PyLong_Check ( valobj ) )
-        return Message_addFieldI64 ( self, args, kwds );
-    else if ( PyFloat_Check ( valobj ) )
-        return Message_addFieldF64 ( self, args, kwds );
-    else if ( PyString_Check ( valobj ) || PyUnicode_Check ( valobj ) )
-        return Message_addFieldString ( self, args, kwds );
-    else if ( PyObject_IsInstance ( ( PyObject * ) self,
-                                    ( PyObject * ) &MessageType ) )
-        return Message_addFieldMsg ( self, args, kwds );
+    /* Either get the type from the type object parameter, or attempt to
+       determine the type from that of the Python value object */
+    if ( typeobj )
+    {
+        int type = PyInt_AsLong ( typeobj );
+        if ( type < 0 || type > 255 )
+        {
+            exception_raise_any ( PyExc_OverflowError,
+                                  "Type parameter for Message.addField must "
+                                  "be within range 0<=N<=255" );
+            return 0;
+        }
+
+        fudgetype = ( fudge_type_id ) type;
+    }
     else
     {
-        /* Try to generate a useful error message */
-        PyObject * typeobj = 0, * typestr = 0;
+        if ( Message_getFudgeType ( &fudgetype, valobj ) )
+        {
+            /* Cannot figure out the type - raise a useful error */
+            PyObject * typestr = 0;
+            if ( ( typeobj = PyObject_Type ( valobj ) ) )
+                typestr = PyObject_Str ( typeobj );
 
-        if ( ! ( typeobj = PyObject_Type ( valobj ) ) )
-            goto clean_and_fail;
-        if ( ! ( typestr = PyObject_Str ( typeobj ) ) )
-            goto clean_and_fail;
+            if ( typeobj && typestr )
+                exception_raise_any ( PyExc_TypeError,
+                                      "Cannot determine Fudge type for %s",
+                                      PyString_AsString ( typestr ) );
 
-        exception_raise_any ( PyExc_TypeError,
-                              "Don't know how to addField of %s",
-                              PyString_AsString ( typestr ) );
-clean_and_fail:
-        Py_XDECREF( typeobj );
-        Py_XDECREF( typestr );
-        return 0;
+            Py_XDECREF( typeobj );
+            Py_XDECREF( typestr );
+            return 0;
+        }
+    }
+
+    /* Pass off to correct addField implementation for fudge type */
+    switch ( fudgetype )
+    {
+        case FUDGE_TYPE_INDICATOR:      return Message_addFieldIndicatorImpl ( self, nameobj, ordobj );
+        case FUDGE_TYPE_BOOLEAN:        return Message_addFieldBoolImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE:           return Message_addFieldByteImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_SHORT:          return Message_addFieldI16Impl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_INT:            return Message_addFieldI32Impl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_LONG:           return Message_addFieldI64Impl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_FLOAT:          return Message_addFieldF32Impl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_DOUBLE:         return Message_addFieldF64Impl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_STRING:         return Message_addFieldStringImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_FUDGE_MSG:      return Message_addFieldMsgImpl ( self, valobj, nameobj, ordobj );
+
+        case FUDGE_TYPE_BYTE_ARRAY:     return Message_addFieldByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_SHORT_ARRAY:    return Message_addFieldI16ArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_INT_ARRAY:      return Message_addFieldI32ArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_LONG_ARRAY:     return Message_addFieldI64ArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_FLOAT_ARRAY:    return Message_addFieldF32ArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_DOUBLE_ARRAY:   return Message_addFieldF64ArrayImpl ( self, valobj, nameobj, ordobj );
+
+        case FUDGE_TYPE_BYTE_ARRAY_4:   return Message_addField4ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_8:   return Message_addField8ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_16:  return Message_addField16ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_20:  return Message_addField20ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_32:  return Message_addField32ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_64:  return Message_addField64ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_128: return Message_addField128ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_256: return Message_addField256ByteArrayImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_BYTE_ARRAY_512: return Message_addField512ByteArrayImpl ( self, valobj, nameobj, ordobj );
+
+        default:
+            exception_raise_any ( PyExc_TypeError,
+                                  "No addField implemention found for Fudge "
+                                  "type %d", fudgetype );
+            return 0;
     }
 }
 
