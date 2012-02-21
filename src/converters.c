@@ -15,6 +15,30 @@
  */
 #include "converters.h"
 #include "message.h"
+#include <datetime.h>
+#include <fudge/datetime.h>
+
+static PyObject * s_timezonemodule = 0,
+                * s_timezonetype = 0;
+
+int fudgepyc_initialiseConverters ( PyObject * module )
+{
+    if ( ! s_timezonemodule &&
+         ! ( s_timezonemodule = PyImport_ImportModule ( "fudgepyc.timezone" ) ) )
+        return -1;
+    if ( ! s_timezonetype &&
+         ! ( s_timezonetype = PyObject_GetAttrString ( s_timezonemodule,
+                                                       "Timezone" ) ) )
+    {
+        exception_raise_any ( PyExc_ImportError,
+                              "Could not find \"Timezone\" class in "
+                              "fudgepyc/timezone module" );
+        return -1;
+    }
+
+    PyDateTime_IMPORT;
+    return 0;
+}
 
 int fudgepyc_convertPythonToBool ( fudge_bool * target, PyObject * source )
 {
@@ -27,37 +51,44 @@ int fudgepyc_convertPythonToBool ( fudge_bool * target, PyObject * source )
     return 0;
 }
 
-/* TODO Make this more efficient - Python objects that are already of the
-   correct type should not be converted */
 #define CONVERT_PYTHON_TO_INTEGER( TYPENAME, NAME, CTYPE, LOW, HIGH )       \
 int fudgepyc_convertPythonTo ## TYPENAME ( CTYPE * target,                  \
                                            PyObject * source )              \
 {                                                                           \
-    int64_t interval;                                                       \
-    PyObject * interobj = 0;                                                \
+    PY_LONG_LONG value;                                                     \
                                                                             \
-    if ( PyNumber_Check ( source ) )                                        \
-        interobj = PyNumber_Long ( source );                                \
-    if ( ! interobj )                                                       \
+    if ( PyInt_Check ( source ) )                                           \
+        value = PyInt_AsLong ( source );                                    \
+    else if ( PyLong_Check ( source ) )                                     \
+        value = PyLong_AsLongLong ( source );                               \
+    else                                                                    \
     {                                                                       \
-        exception_raise_any ( PyExc_ValueError,                             \
-                              "Cannot use object as %s, not numeric",       \
-                              NAME );                                       \
-        return -1;                                                          \
+        PyObject * valueobj = 0;                                            \
+        if ( PyNumber_Check ( source ) )                                    \
+            valueobj = PyNumber_Long ( source );                            \
+        if ( ! valueobj )                                                   \
+        {                                                                   \
+            exception_raise_any ( PyExc_ValueError,                         \
+                                  "Cannot use object as %s, not numeric",   \
+                                  NAME );                                   \
+            return -1;                                                      \
+        }                                                                   \
+        value = PyLong_AsLongLong ( valueobj );                             \
+        Py_DECREF( valueobj );                                              \
     }                                                                       \
-    interval = PyLong_AsLongLong ( interobj );                              \
-    Py_DECREF( interobj );                                                  \
                                                                             \
-    if ( interval < LOW || interval > HIGH )                                \
+    if ( value == -1 && PyErr_Occurred ( ) )                                \
+        return -1;                                                          \
+                                                                            \
+    if ( value < LOW || value > HIGH )                                      \
     {                                                                       \
         exception_raise_any ( PyExc_OverflowError,                          \
                               "Cannot use value %lld as %s, out of range",  \
-                              interval,                                     \
-                              NAME );                                       \
+                              value, NAME );                                \
         return -1;                                                          \
     }                                                                       \
                                                                             \
-    *target = ( CTYPE ) interval;                                           \
+    *target = ( CTYPE ) value;                                              \
     return 0;                                                               \
 }
 
@@ -153,6 +184,233 @@ int fudgepyc_convertPythonToString ( FudgeString * target, PyObject * source )
                               "or Unicode)" );
         return -1;
     }
+}
+
+static int fudgepyc_convertAttrToInt ( int * target,
+                                       PyObject * obj,
+                                       const char * attr )
+{
+    PyObject * attrobj = PyObject_GetAttrString ( obj, attr );
+    if ( attrobj )
+    {
+        *target = ( int ) PyInt_AsLong ( attrobj );
+        Py_DECREF( attrobj );
+        return 0;
+    }
+    else
+        return -1;
+}
+
+int fudgepyc_convertPythonToDate ( FudgeDate * target, PyObject * source )
+{
+    FudgeStatus status;
+    int year, month, day;
+
+    if ( ! ( PyDate_Check ( source ) || PyDateTime_Check ( source ) ) )
+    {
+        exception_raise_any ( PyExc_TypeError,
+                              "Only datetime.date and datetime.datetime "
+                              "types can be converted in to FudgeDate" );
+        return -1;
+    }
+
+    if ( fudgepyc_convertAttrToInt ( &year, source, "year" ) ||
+         fudgepyc_convertAttrToInt ( &month, source, "month" ) ||
+         fudgepyc_convertAttrToInt ( &day, source, "day" ) )
+        return -1;
+
+    status = FudgeDate_initialise ( target, year, month, day );
+    return exception_raiseOnError ( status );
+}
+
+static int fudgepyc_convertUtcOffset ( int * target, PyObject * obj )
+{
+    int days, seconds, microseconds;
+
+    if ( ! PyDelta_Check ( obj ) )
+    {
+        exception_raise_any ( PyExc_TypeError,
+                              "datetime.time.utcoffset() did not return "
+                              "a datetime.timedelta instance as expected" );
+        return -1;
+    }
+
+    if ( fudgepyc_convertAttrToInt ( &days, obj, "days" ) ||
+         fudgepyc_convertAttrToInt ( &seconds, obj, "seconds" ) ||
+         fudgepyc_convertAttrToInt ( &microseconds, obj, "microseconds" ) )
+        return -1;
+
+    seconds += days * 86400;
+
+    if ( seconds % 60 || microseconds )
+    {
+        exception_raise_any ( PyExc_ValueError,
+                              "The maximum resolution for datetime.tzinfo "
+                              "instances is 15 minutes; UTC offsets not "
+                              "exactly divisible by this are not supported" );
+        return -1;
+    }
+
+    *target = seconds / 900;    /* 15 minutes in seconds */
+    return 0;
+}
+
+int fudgepyc_convertPythonToTime ( FudgeTime * target, PyObject * source )
+{
+    FudgeStatus status;
+    int hour, minute, second, microsecond, offset = 0, result, hastz;
+    PyObject * utcoffset;
+
+    if ( ! ( PyTime_Check ( source ) || PyDateTime_Check ( source ) ) )
+    {
+        exception_raise_any ( PyExc_TypeError,
+                              "Only datetime.time and datetime.datetime "
+                              "types can be converted in to FudgeTime" );
+        return -1;
+    }
+
+    if ( ! ( utcoffset = PyObject_CallMethod ( source, "utcoffset", "" ) ) )
+        return -1;
+    if ( ( hastz = ( utcoffset != Py_None ) ) )
+        result = fudgepyc_convertUtcOffset ( &offset, utcoffset );
+    else
+        result = offset = 0;
+    Py_DECREF( utcoffset );
+    if ( result )
+        return -1;
+
+    if ( fudgepyc_convertAttrToInt ( &hour, source, "hour" ) ||
+         fudgepyc_convertAttrToInt ( &minute, source, "minute" ) ||
+         fudgepyc_convertAttrToInt ( &second, source, "second" ) ||
+         fudgepyc_convertAttrToInt ( &microsecond, source, "microsecond" ) )
+        return -1;
+
+    if ( hastz )
+        status = FudgeTime_initialiseWithTimezone ( target,
+                                                    second + minute * 60 + hour * 3600,
+                                                    microsecond * 1000,
+                                                    FUDGE_DATETIME_PRECISION_MICROSECOND,
+                                                    offset );
+    else
+        status = FudgeTime_initialise ( target,
+                                        second + minute * 60 + hour * 3600,
+                                        microsecond * 1000,
+                                        FUDGE_DATETIME_PRECISION_MICROSECOND );
+    return exception_raiseOnError ( status );
+}
+
+int fudgepyc_convertPythonToDateTime ( FudgeDateTime * target, PyObject * source )
+{
+    return fudgepyc_convertPythonToDate ( &target->date, source ) ||
+           fudgepyc_convertPythonToTime ( &target->time, source );
+}
+
+static int fudgepyc_convertToBoundedInt ( int * target,
+                                          PyObject * source,
+                                          int lower,
+                                          int upper )
+{
+    if ( ! source )
+    {
+        *target = 0;
+        return 0;
+    }
+
+    if ( ( *target = ( int ) PyInt_AsLong ( source ) ) == -1
+         && PyErr_Occurred ( ) )
+        return -1;
+
+    if ( *target < lower || *target > upper )
+    {
+        exception_raise_any ( PyExc_OverflowError,
+                              "Integer %d is out of expected bound %d - %d",
+                              *target, lower, upper );
+        return -1;
+    }
+    return 0;
+}
+
+int fudgepyc_convertPythonToDateEx ( FudgeDate * target,
+                                     PyObject * yearobj,
+                                     PyObject * monthobj,
+                                     PyObject * dayobj )
+{
+    FudgeStatus status;
+    int year, month, day;
+
+    if ( fudgepyc_convertToBoundedInt ( &year, 
+                                        yearobj,
+                                        FUDGEDATE_MIN_YEAR,
+                                        FUDGEDATE_MAX_YEAR ) ||
+         fudgepyc_convertToBoundedInt ( &month, monthobj, 0, 12 ) ||
+         fudgepyc_convertToBoundedInt ( &day, dayobj, 0, 31 ) )
+        return -1;
+
+    status = FudgeDate_initialise ( target, year, month, day );
+    return exception_raiseOnError ( status );
+}
+
+int fudgepyc_convertPythonToTimeEx ( FudgeTime * target,
+                                     unsigned int precision,
+                                     PyObject * hourobj,
+                                     PyObject * minuteobj,
+                                     PyObject * secondobj,
+                                     PyObject * nanoobj,
+                                     PyObject * offsetobj )
+{
+    FudgeStatus status;
+    int hour, minute, second, nano;
+
+    if ( fudgepyc_convertToBoundedInt ( &hour, hourobj, 0, 23 ) ||
+         fudgepyc_convertToBoundedInt ( &minute, minuteobj, 0, 59 ) ||
+         fudgepyc_convertToBoundedInt ( &second, secondobj, 0, 59 ) ||
+         fudgepyc_convertToBoundedInt ( &nano, nanoobj, 0, 1000000000 ) )
+        return -1;
+
+    if ( offsetobj )
+    {
+        int offset;
+        if ( fudgepyc_convertToBoundedInt ( &offset, offsetobj, -127, 127 ) )
+            return -1;
+
+        status = FudgeTime_initialiseWithTimezone ( target,
+                                                    second + minute * 60 + hour * 3600,
+                                                    nano,
+                                                    precision,
+                                                    offset );
+    }
+    else
+    {
+        status = FudgeTime_initialise ( target,
+                                        second + minute * 60 + hour * 3600,
+                                        nano,
+                                        precision );
+    }
+    return exception_raiseOnError ( status );
+}
+
+int fudgepyc_convertPythonToDateTimeEx ( FudgeDateTime * target,
+                                         unsigned int precision,
+                                         PyObject * yearobj,
+                                         PyObject * monthobj,
+                                         PyObject * dayobj,
+                                         PyObject * hourobj,
+                                         PyObject * minuteobj,
+                                         PyObject * secondobj,
+                                         PyObject * nanoobj,
+                                         PyObject * offsetobj )
+{
+    return fudgepyc_convertPythonToDateEx ( &target->date,
+                                            yearobj,
+                                            monthobj,
+                                            dayobj ) ||
+           fudgepyc_convertPythonToTimeEx ( &target->time,
+                                            precision,
+                                            hourobj,
+                                            minuteobj,
+                                            secondobj,
+                                            nanoobj,
+                                            offsetobj );
 }
 
 #define CONVERT_PYTHON_SEQ_TO_BLOCK( TYPENAME, NAME, CTYPE )                \
@@ -395,6 +653,164 @@ PyObject * fudgepyc_convertStringToPython ( FudgeString source )
                                      written / sizeof ( Py_UNICODE ) );
     PyMem_Free ( buffer );
     return target;
+}
+
+typedef struct
+{
+    int years, months, days,
+        hours, minutes, seconds, microseconds;
+    PyObject * tzinfo;
+} PythonDateTime;
+
+static int fudgepyc_convertDateToPythonDateTime ( PythonDateTime * target,
+                                                  FudgeDate * source )
+{
+    target->years = source->year > 0 ? source->year : 1;
+    target->months = source->month > 0 ? source->month : 1;
+    target->days = source->day > 0 ? source->day : 1;
+    return 0;
+}
+
+static int fudgepyc_convertTimeToPythonDateTime ( PythonDateTime * target,
+                                                  FudgeTime * source )
+{
+    if ( source->hasTimezone )
+    {
+        PyObject * args = Py_BuildValue ( "(i)", source->timezoneOffset );
+        if ( ! args )
+            return -1;
+
+        target->tzinfo = PyObject_CallObject ( s_timezonetype, args );
+        Py_DECREF( args );
+
+        if ( ! target->tzinfo )
+            return -1;
+    }
+    else
+        Py_INCREF( target->tzinfo = Py_None );
+
+    target->seconds = source->seconds;
+    target->seconds -= ( target->hours = target->seconds / 3600 ) * 3600;
+    target->seconds -= ( target->minutes = target->seconds / 60 ) * 60;
+    target->microseconds = source->nanoseconds / 1000;
+    return 0;
+}
+
+PyObject * fudgepyc_convertDateToPython ( FudgeDate * source )
+{
+    PythonDateTime pdt;
+
+    if ( fudgepyc_convertDateToPythonDateTime ( &pdt, source ) )
+        return 0;
+
+    return PyDate_FromDate ( pdt.years, pdt.months, pdt.days );
+}
+
+PyObject * fudgepyc_convertTimeToPython ( FudgeTime * source )
+{
+    PythonDateTime pdt;
+    PyObject * target = 0,
+             * args;
+
+    if ( fudgepyc_convertTimeToPythonDateTime ( &pdt, source ) )
+        return 0;
+
+    args = Py_BuildValue ( "iiiiO", pdt.hours,
+                                    pdt.minutes,
+                                    pdt.seconds,
+                                    pdt.microseconds,
+                                    pdt.tzinfo );
+    Py_DECREF( pdt.tzinfo );
+    if ( ! args )
+        return 0;
+
+    target = PyObject_CallObject ( ( PyObject * ) PyDateTimeAPI->TimeType,
+                                    args );
+    Py_DECREF( args );
+    return target;
+}
+
+PyObject * fudgepyc_convertDateTimeToPython ( FudgeDateTime * source )
+{
+    PythonDateTime pdt;
+    PyObject * target = 0,
+             * args;
+
+    if ( fudgepyc_convertDateToPythonDateTime ( &pdt, &source->date ) )
+        return 0;
+    if ( fudgepyc_convertTimeToPythonDateTime ( &pdt, &source->time ) )
+        return 0;
+
+    args = Py_BuildValue ( "iiiiiiiO", pdt.years,
+                                       pdt.months,
+                                       pdt.days,
+                                       pdt.hours,
+                                       pdt.minutes,
+                                       pdt.seconds,
+                                       pdt.microseconds,
+                                       pdt.tzinfo );
+    Py_DECREF( pdt.tzinfo );
+    if ( ! args )
+        return 0;
+
+    target = PyObject_CallObject ( ( PyObject * ) PyDateTimeAPI->DateTimeType,
+                                    args );
+    Py_DECREF( args );
+    return target;
+}
+
+PyObject * fudgepyc_convertDateToPythonEx ( FudgeDate * source )
+{
+    return Py_BuildValue ( "iii", source->year,
+                                  source->month,
+                                  source->day );
+}
+
+PyObject * fudgepyc_convertTimeToPythonEx ( FudgeTime * source )
+{
+    int hours, minutes, seconds;
+    PyObject * offset;
+
+    seconds = source->seconds;
+    seconds -= ( hours = seconds / 3600 ) * 3600;
+    seconds -= ( minutes = seconds / 60 ) * 60;
+
+    if ( source->hasTimezone )
+        offset = PyInt_FromLong ( source->timezoneOffset );
+    else
+        Py_INCREF( offset = Py_None );
+
+    return Py_BuildValue ( "iiiiiO", source->precision,
+                                     hours,
+                                     minutes,
+                                     seconds,
+                                     source->nanoseconds,
+                                     offset );
+}
+
+PyObject * fudgepyc_convertDateTimeToPythonEx ( FudgeDateTime * source )
+{
+    int hours, minutes, seconds;
+    PyObject * offset;
+
+    seconds = source->time.seconds;
+    seconds -= ( hours = seconds / 3600 ) * 3600;
+    seconds -= ( minutes = seconds / 60 ) * 60;
+
+    if ( source->time.hasTimezone )
+        offset = PyInt_FromLong ( source->time.timezoneOffset );
+    else
+        Py_INCREF( offset = Py_None );
+
+    return Py_BuildValue ( "iiiiiiiiO", source->time.precision,
+                                        source->date.year,
+                                        source->date.month,
+                                        source->date.day,
+                                        hours,
+                                        minutes,
+                                        seconds,
+                                        source->time.nanoseconds,
+                                        offset );
 }
 
 #define CONVERT_ARRAY_TO_PYTHON_SEQ( TYPENAME, CTYPE )                      \

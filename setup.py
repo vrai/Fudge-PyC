@@ -126,7 +126,7 @@ _depends = { 'impl' : [ 'converters.h',
              'types' : [ ] }
 
 setup ( name = 'Fudge-PyC',
-        version = '0.1.0',
+        version = '0.2.0',
         description = 'Python wrapper around the Fudge-C library',
         packages = [ 'fudgepyc' ],
         package_dir = { 'fudgepyc' : 'fudgepyc' },

@@ -14,10 +14,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
+import datetime, unittest
 import fudgepyc
 import fudgepyc.types
 from fudgepyc import Field, Message
+
+class TestTimeZone ( datetime.tzinfo ):
+    def utcoffset ( self, dt ): return datetime.timedelta ( minutes = -300 )
+    def dst ( self, dt ): return False
+    def tzname ( self, dt ): return 'EST'
+
 
 class MessageTestCase ( unittest.TestCase ):
     def setUp ( self ):
@@ -31,8 +37,9 @@ class MessageTestCase ( unittest.TestCase ):
         rawLongsSeq = ( -9223372036854775807l, 0, 9223372036854775807l, -1, 2, -3, 5, -8, 13, -21, 34, -55 )
         rawFloatsSeq = [ 0.0, 2147483647.0, 214748364.7, 21474836.47, 2147483.647, 2.147483647, 21.47483647, 214.7483647 ]
         rawDoublesSeq = ( 9223372036854775807.0, 0.0, 0.0000000123456, 1234560000000.0, -9223372036854775807.0 )
-
-        # TODO Date/time example
+        rawDate = datetime.date ( 1962, 2, 20 )
+        rawTime = datetime.time ( 11, 41, 19, 123456, TestTimeZone ( ) )
+        rawDateTime = datetime.datetime ( 2012, 2, 19, 11, 43, 16 )
 
         # Will need a variety of large byte strings and arrays - bit of
         # hackery required to support Fudge's signed bytes and Python's
@@ -80,9 +87,9 @@ class MessageTestCase ( unittest.TestCase ):
         self.assertEqual ( len ( message1 ), 8 )
 
         # Add date, time and datetime fields
-        message1.addFieldIndicator ( )  # TODO Date
-        message1.addFieldIndicator ( )  # TODO Time
-        message1.addFieldIndicator ( )  # TODO Datetime
+        message1.addFieldDate ( rawDate )
+        message1.addFieldTime ( rawTime )
+        message1.addField ( rawDateTime )
 
         self.assertEqual ( len ( message1 ), 11 )
 
@@ -149,9 +156,14 @@ class MessageTestCase ( unittest.TestCase ):
         self.assertEqual ( fields [ 7 ].type ( ), fudgepyc.types.DOUBLE )
         self.assertAlmostEqual ( fields [ 7 ].getFloat64 ( ), -9223372036854775807.0, -1 )
         self.assertAlmostEqual ( fields [ 7 ].value ( ), -9223372036854775807.0, -1 )
-        # TODO Date
-        # TODO Time
-        # TODO Datetime
+        self.assertEqual ( fields [ 8 ].getDate ( ), rawDate )
+        self.assertEqual ( fields [ 8 ].value ( ), rawDate )
+        self.assertEqual ( fields [ 9 ].getTime ( ), rawTime )
+        self.assertEqual ( fields [ 9 ].value ( ), rawTime )
+        self.assert_ ( isinstance ( fields [ 9 ].value ( ).tzinfo, fudgepyc.timezone.Timezone ) )
+        self.assertEqual ( fields [ 10 ].value ( ), rawDateTime )
+        self.assertEqual ( fields [ 10 ].getDateTime ( ), rawDateTime )
+        self.assertEqual ( fields [ 10 ].value ( ).tzinfo, None )
         self.assertEqual ( fields [ 11 ].type ( ), fudgepyc.types.MESSAGE )
         self.assert_ ( isinstance ( fields [ 11 ].getMessage ( ), Message ) )
         self.assert_ ( isinstance ( fields [ 11 ].value ( ), Message ) )
@@ -393,6 +405,127 @@ class MessageTestCase ( unittest.TestCase ):
         self.assertAlmostEqual ( fields [ 11 ].getAsFloat64 ( ), 123.4567, 4 )      # Non-zero double
         self.assertRaises( fudgepyc.Exception, fields [ 12 ].getAsFloat64 )
 
+    def testDateTimeFields ( self ):
+        message1 = Message ( )
+
+        # Populate message using raw datetime methods
+        message1.addFieldRawDate (               name = 'nodate' )
+        message1.addFieldRawDate ( 1689,         name = 'year' )
+        message1.addFieldRawDate ( 1689, 12,     name = 'month' )
+        message1.addFieldRawDate ( 1689, 12, 16, name = 'day' )
+
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_MILLENNIUM,                       name = 'notime' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_HOUR,       18,                   name = 'hour' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_MINUTE,     18, 4,                name = 'minute' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_SECOND,     18, 4, 40,            name = 'second' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_NANOSECOND, 18, 4, 40, 237363123, name = 'nanosecond' )
+
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_MILLENNIUM,                       offset = 0,   name = 'notime_utc' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_HOUR,       18,                   offset = 8,   name = 'hour_+2h' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_MINUTE,     18, 4,                offset = -4,  name = 'minute_-1h' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_SECOND,     18, 4, 40,            offset = -20, name = 'second_-5h' )
+        message1.addFieldRawTime ( fudgepyc.types.PRECISION_NANOSECOND, 18, 4, 40, 237363123, offset = 0,   name = 'nanosecond_utc' )
+
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_CENTURY,                                        name = 'nodatetime' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_YEAR,       1689,                               name = 'dt_year' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_MONTH,      1689, 12,                           name = 'dt_month',      offset = -6 )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_DAY,        1689, 12, 16,                       name = 'dt_day' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_HOUR,       1689, 12, 16, 18,                   name = 'dt_hour' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_MINUTE,     1689, 12, 16, 18, 4,                name = 'dt_minute',     offset = 0 )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_SECOND,     1689, 12, 16, 18, 4, 40,            name = 'dt_second' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_NANOSECOND, 1689, 12, 16, 18, 4, 40, 237363123, name = 'dt_nanosecond', offset = 1 )
+
+        # Access the fields as raw tuples
+        self.assertEqual ( message1 [ 'nodate' ].getRawDate ( ), ( 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'year' ].getRawDate ( ),   ( 1689, 0, 0 ) )
+        self.assertEqual ( message1 [ 'month' ].getRawDate ( ),  ( 1689, 12, 0 ) )
+        self.assertEqual ( message1 [ 'day' ].getRawDate ( ),    ( 1689, 12, 16 ) )
+
+        self.assertEqual ( message1 [ 'notime' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_MILLENNIUM, 0, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'hour' ].getRawTime ( ),       ( fudgepyc.types.PRECISION_HOUR,       18, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'minute' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_MINUTE,     18, 4, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'second' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_SECOND,     18, 4, 40, 0, None ) )
+        self.assertEqual ( message1 [ 'nanosecond' ].getRawTime ( ), ( fudgepyc.types.PRECISION_NANOSECOND, 18, 4, 40, 237363123, None ) )
+
+        self.assertEqual ( message1 [ 'notime_utc' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_MILLENNIUM, 0, 0, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'hour_+2h' ].getRawTime ( ),       ( fudgepyc.types.PRECISION_HOUR,       18, 0, 0, 0, 8 ) )
+        self.assertEqual ( message1 [ 'minute_-1h' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_MINUTE,     18, 4, 0, 0, -4 ) )
+        self.assertEqual ( message1 [ 'second_-5h' ].getRawTime ( ),     ( fudgepyc.types.PRECISION_SECOND,     18, 4, 40, 0, -20 ) )
+        self.assertEqual ( message1 [ 'nanosecond_utc' ].getRawTime ( ), ( fudgepyc.types.PRECISION_NANOSECOND, 18, 4, 40, 237363123, 0 ) )
+
+        self.assertEqual ( message1 [ 'nodatetime' ].getRawDateTime ( ),    ( fudgepyc.types.PRECISION_CENTURY,    0, 0, 0, 0, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'dt_year' ].getRawDateTime ( ),       ( fudgepyc.types.PRECISION_YEAR,       1689, 0, 0, 0, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'dt_month' ].getRawDateTime ( ),      ( fudgepyc.types.PRECISION_MONTH,      1689, 12, 0, 0, 0, 0, 0, -6 ) )
+        self.assertEqual ( message1 [ 'dt_day' ].getRawDateTime ( ),        ( fudgepyc.types.PRECISION_DAY,        1689, 12, 16, 0, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'dt_hour' ].getRawDateTime ( ),       ( fudgepyc.types.PRECISION_HOUR,       1689, 12, 16, 18, 0, 0, 0, None ) )
+        self.assertEqual ( message1 [ 'dt_minute' ].getRawDateTime ( ),     ( fudgepyc.types.PRECISION_MINUTE,     1689, 12, 16, 18, 4, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'dt_second' ].getRawDateTime ( ),     ( fudgepyc.types.PRECISION_SECOND,     1689, 12, 16, 18, 4, 40, 0, None ) )
+        self.assertEqual ( message1 [ 'dt_nanosecond' ].getRawDateTime ( ), ( fudgepyc.types.PRECISION_NANOSECOND, 1689, 12, 16, 18, 4, 40, 237363123, 1 ) )
+
+        # Access the fields as datetime objects
+        self.assertEqual ( message1 [ 'nodate' ].value ( ), datetime.date ( 1, 1, 1 ) )
+        self.assertEqual ( message1 [ 'year' ].value ( ),   datetime.date ( 1689, 1, 1 ) )
+        self.assertEqual ( message1 [ 'month' ].value ( ),  datetime.date ( 1689, 12, 1 ) )
+        self.assertEqual ( message1 [ 'day' ].value ( ),    datetime.date ( 1689, 12, 16 ) )
+
+        self.assertEqual ( message1 [ 'notime' ].value ( ),     datetime.time ( 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'hour' ].value ( ),       datetime.time ( 18, 0, 0 ) )
+        self.assertEqual ( message1 [ 'minute' ].value ( ),     datetime.time ( 18, 4, 0 ) )
+        self.assertEqual ( message1 [ 'second' ].value ( ),     datetime.time ( 18, 4, 40 ) )
+        self.assertEqual ( message1 [ 'nanosecond' ].value ( ), datetime.time ( 18, 4, 40, 237363 ) )
+
+        self.assertEqual ( message1 [ 'notime_utc' ].value ( ),     datetime.time ( 0, 0, 0, 0, fudgepyc.timezone.Timezone ( 0 ) ) )
+        self.assertEqual ( message1 [ 'hour_+2h' ].value ( ),       datetime.time ( 18, 0, 0, 0, fudgepyc.timezone.Timezone ( 8 ) ) )
+        self.assertEqual ( message1 [ 'minute_-1h' ].value ( ),     datetime.time ( 18, 4, 0, 0, fudgepyc.timezone.Timezone ( -4 ) ) )
+        self.assertEqual ( message1 [ 'second_-5h' ].value ( ),     datetime.time ( 18, 4, 40, 0, fudgepyc.timezone.Timezone ( -20 ) ) )
+        self.assertEqual ( message1 [ 'nanosecond_utc' ].value ( ), datetime.time ( 18, 4, 40, 237363, fudgepyc.timezone.Timezone ( 0 ) ) )
+
+        self.assertEqual ( message1 [ 'nodatetime' ].value ( ),    datetime.datetime ( 1, 1, 1, 0, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'dt_year' ].value ( ),       datetime.datetime ( 1689, 1, 1, 0, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'dt_month' ].value ( ),      datetime.datetime ( 1689, 12, 1, 0, 0, 0, 0, fudgepyc.timezone.Timezone ( -6 ) ) )
+        self.assertEqual ( message1 [ 'dt_day' ].value ( ),        datetime.datetime ( 1689, 12, 16, 0, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'dt_hour' ].value ( ),       datetime.datetime ( 1689, 12, 16, 18, 0, 0, 0 ) )
+        self.assertEqual ( message1 [ 'dt_minute' ].value ( ),     datetime.datetime ( 1689, 12, 16, 18, 4, 0, 0, fudgepyc.timezone.Timezone ( 0 ) ) )
+        self.assertEqual ( message1 [ 'dt_second' ].value ( ),     datetime.datetime ( 1689, 12, 16, 18, 4, 40, 0 ) )
+        self.assertEqual ( message1 [ 'dt_nanosecond' ].value ( ), datetime.datetime ( 1689, 12, 16, 18, 4, 40, 237363, fudgepyc.timezone.Timezone ( 1 ) ) )
+
+
+    def testIntegerFields ( self ):
+        message1 = Message ( )
+
+        self.assertRaises ( OverflowError, message1.addFieldByte, -129 )
+        self.assertRaises ( OverflowError, message1.addFieldByte, 128 )
+        self.assertRaises ( OverflowError, message1.addFieldI16, -32769 )
+        self.assertRaises ( OverflowError, message1.addFieldI16, 32768 )
+        self.assertRaises ( OverflowError, message1.addFieldI32, -2147483649 )
+        self.assertRaises ( OverflowError, message1.addFieldI32, 2147483648 )
+        self.assertRaises ( OverflowError, message1.addFieldI64, 9223372036854775808 )
+        self.assertRaises ( OverflowError, message1.addFieldI64, -9223372036854775809 )
+
+        self.assertRaises ( ValueError, message1.addFieldByte, None )
+        self.assertRaises ( ValueError, message1.addFieldI16,  '' )
+        self.assertRaises ( ValueError, message1.addFieldI32,  u'' )
+        self.assertRaises ( ValueError, message1.addFieldI64,  lambda x: x )
+
+        message1.addFieldByte ( 127,                'byte_fromint' )
+        message1.addFieldByte ( -128.4,             'byte_fromfloat' )
+        message1.addFieldI16 ( 32767,               'short_fromint' )
+        message1.addFieldI16 ( -32768.1,            'short_fromfloat' )
+        message1.addFieldI32 ( 2147483647,          'int_fromint' )
+        message1.addFieldI32 ( -2147483648.9,       'int_fromfloat' )
+        message1.addFieldI64 ( 9223372036854775807, 'long_fromint' )
+        message1.addFieldI64 ( 9.22e+18,            'long_fromfloat' )
+
+        self.assertEquals ( message1 [ 'byte_fromint' ].value ( ),    127 )
+        self.assertEquals ( message1 [ 'byte_fromfloat' ].value ( ),  -128 )
+        self.assertEquals ( message1 [ 'short_fromint' ].value ( ),   32767 )
+        self.assertEquals ( message1 [ 'short_fromfloat' ].value ( ), -32768 )
+        self.assertEquals ( message1 [ 'int_fromint' ].value ( ),     2147483647 )
+        self.assertEquals ( message1 [ 'int_fromfloat' ].value ( ),   -2147483648 )
+        self.assertEquals ( message1 [ 'long_fromint' ].value ( ),    9223372036854775807 )
+        self.assertEquals ( message1 [ 'long_fromfloat' ].value ( ),  9220000000000000000 )
+
+
     def __generateByteArray ( self, size ):
         return [ idx % 256 - 128 for idx in range ( 0, size ) ]
 
@@ -405,5 +538,7 @@ class MessageTestCase ( unittest.TestCase ):
 def suite ( ):
     tests = [ 'testFieldFunctions',
               'testIntegerFieldDowncasting',
-              'testFieldCoercion' ]
+              'testFieldCoercion',
+              'testDateTimeFields',
+              'testIntegerFields' ]
     return unittest.TestSuite ( map ( MessageTestCase, tests ) )

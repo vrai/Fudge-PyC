@@ -47,6 +47,7 @@ error:
   $ python
   >>> import fudgepyc
   >>> import fudgepyc.types
+  >>> import fudgepyc.timezone
   >>> fudgepyc.init ( )
 
 The usual distutils options are available, such as --prefix if you don't want

@@ -167,6 +167,9 @@ static const char DOC_fudgepyc_field_value [] =
 "  - Double[]: List fo double\n"
 "  - String: Unicode\n"
 "  - FudgeMsg: fudgepyc.Message\n"
+"  - Date: datetime.date\n"
+"  - Time: datetime.time\n"
+"  - DateTime: datetime.datetime\n"
 "\n"
 "@return: Python object containing the Field value\n";
 PyObject * Field_value ( Field * self )
@@ -227,12 +230,11 @@ PyObject * Field_value ( Field * self )
                                              self->field.data.message );
 
         case FUDGE_TYPE_DATE:
+            return fudgepyc_convertDateToPython ( &self->field.data.datetime.date );
         case FUDGE_TYPE_TIME:
+            return fudgepyc_convertTimeToPython ( &self->field.data.datetime.time );
         case FUDGE_TYPE_DATETIME:
-            /* TODO Implement date/time support */
-            exception_raise_any ( PyExc_NotImplementedError,
-                                  "Date/time support not complete" );
-            return 0;
+            return fudgepyc_convertDateTimeToPython ( &self->field.data.datetime );
 
         default:
             /* If in doubt - return a bundle of bytes */
@@ -299,27 +301,97 @@ PyObject * Field_bytes ( Field * self )
     return 0;
 }
 
-FIELD_GET_TYPE( Bool,     FUDGE_TYPE_BOOLEAN,      "bool",         "Boolean" )
-FIELD_GET_TYPE( Byte,     FUDGE_TYPE_BYTE,         "int",          "Byte" )
-FIELD_GET_TYPE( I16,      FUDGE_TYPE_SHORT,        "int",          "Short" )
-FIELD_GET_TYPE( I32,      FUDGE_TYPE_INT,          "int",          "Int" )
-FIELD_GET_TYPE( I64,      FUDGE_TYPE_LONG,         "long",         "Long" )
-FIELD_GET_TYPE( F32,      FUDGE_TYPE_FLOAT,        "float",        "Float" )
-FIELD_GET_TYPE( F64,      FUDGE_TYPE_DOUBLE,       "float",        "Double" )
-FIELD_GET_TYPE( Msg,      FUDGE_TYPE_FUDGE_MSG,    "Message",      "FudgeMsg" )
-FIELD_GET_TYPE( String,   FUDGE_TYPE_STRING,       "Unicode",      "String" )
+FIELD_GET_TYPE( Bool,     FUDGE_TYPE_BOOLEAN,      "bool",              "Boolean" )
+FIELD_GET_TYPE( Byte,     FUDGE_TYPE_BYTE,         "int",               "Byte" )
+FIELD_GET_TYPE( I16,      FUDGE_TYPE_SHORT,        "int",               "Short" )
+FIELD_GET_TYPE( I32,      FUDGE_TYPE_INT,          "int",               "Int" )
+FIELD_GET_TYPE( I64,      FUDGE_TYPE_LONG,         "long",              "Long" )
+FIELD_GET_TYPE( F32,      FUDGE_TYPE_FLOAT,        "float",             "Float" )
+FIELD_GET_TYPE( F64,      FUDGE_TYPE_DOUBLE,       "float",             "Double" )
+FIELD_GET_TYPE( Msg,      FUDGE_TYPE_FUDGE_MSG,    "Message",           "FudgeMsg" )
+FIELD_GET_TYPE( String,   FUDGE_TYPE_STRING,       "Unicode",           "String" )
+FIELD_GET_TYPE( Date,     FUDGE_TYPE_DATE,         "datetime.date",     "Date" )
+FIELD_GET_TYPE( Time,     FUDGE_TYPE_TIME,         "datetime.time",     "Time" )
+FIELD_GET_TYPE( DateTime, FUDGE_TYPE_DATETIME,     "datetime.datetime", "DateTime" )
 
-FIELD_GET_TYPE( I16Array, FUDGE_TYPE_SHORT_ARRAY,  "[int, ...]",   "Short[]" )
-FIELD_GET_TYPE( I32Array, FUDGE_TYPE_INT_ARRAY,    "[int, ...]",   "Int[]" )
-FIELD_GET_TYPE( I64Array, FUDGE_TYPE_LONG_ARRAY,   "[long, ...]",  "Long[]" )
-FIELD_GET_TYPE( F32Array, FUDGE_TYPE_FLOAT_ARRAY,  "[float, ...]", "Float[]" )
-FIELD_GET_TYPE( F64Array, FUDGE_TYPE_DOUBLE_ARRAY, "[float, ...]", "Double[]" )
+FIELD_GET_TYPE( I16Array, FUDGE_TYPE_SHORT_ARRAY,  "[int, ...]",        "Short[]" )
+FIELD_GET_TYPE( I32Array, FUDGE_TYPE_INT_ARRAY,    "[int, ...]",        "Int[]" )
+FIELD_GET_TYPE( I64Array, FUDGE_TYPE_LONG_ARRAY,   "[long, ...]",       "Long[]" )
+FIELD_GET_TYPE( F32Array, FUDGE_TYPE_FLOAT_ARRAY,  "[float, ...]",      "Float[]" )
+FIELD_GET_TYPE( F64Array, FUDGE_TYPE_DOUBLE_ARRAY, "[float, ...]",      "Double[]" )
+
+static const char DOC_fudgepyc_field_getRawDate [] =
+    "\nGet the Field value as a tuple containing the raw date information, if\n"
+    "it is of Fudge type Date or DateTime. The tuple will take the form\n"
+    "( year, month, day ) where:\n\n"
+    "  - year: integer representing the year\n"
+    "  - month: integer from 0-12, zero indicates the field is not set\n"
+    "  - day: integer from 0-31, zero indicates the field is not set\n\n"
+    "@return: ( int, int, int ) or fudgepyc.Exception if wrong type\n";
+PyObject * Field_getRawDate ( Field * self )
+{
+    if ( self->field.type == FUDGE_TYPE_DATE
+         || self->field.type == FUDGE_TYPE_DATETIME )
+        return fudgepyc_convertDateToPythonEx ( &self->field.data.datetime.date );
+    exception_raise_any ( FudgePyc_Exception,
+                          "Can only get Date and DateTime fields as raw date" );
+    return 0;
+}
+
+static const char DOC_fudgepyc_field_getRawTime [] =
+    "\nGet the Field value as a tuple containing the raw time information, if\n"
+    "it is of Fudge type Time or DateTime. The tuple will take the form\n"
+    "( precision, hours, minutes, seconds, nanoseconds, offset ) where:\n\n"
+    "  - precision: Fudge precision enumerated integer  (see fudge.types)\n"
+    "  - hours: integer greater or equal to zero\n"
+    "  - minutes: integer from 0-59\n"
+    "  - seconds: integer from 0-59\n"
+    "  - nanoseconds: integer from 0-1000000000\n"
+    "  - offset: number of fifteen minute intervals that the timezone differs\n"
+    "            from UTC by (e.g. +1h would be 4) or None if no timezone\n"
+    "            information\n\n"
+    "@return: ( int, int, int, int, int, int|None ) or fudgepyc.Exception\n";
+PyObject * Field_getRawTime ( Field * self )
+{
+    if ( self->field.type == FUDGE_TYPE_TIME
+         || self->field.type == FUDGE_TYPE_DATETIME )
+        return fudgepyc_convertTimeToPythonEx ( &self->field.data.datetime.time );
+    exception_raise_any ( FudgePyc_Exception,
+                          "Can only get Time and DateTime fields as raw time" );
+    return 0;
+}
+
+static const char DOC_fudgepyc_field_getRawDateTime [] =
+    "\nGet the Field value as a tuple containing the raw datetime information,\n"
+    "if it is of Fudge type DateTime. The tuple will take the form: ( precision,\n"
+    "year, month, day, hours, minutes, seconds, nanoseconds, offset ) where:\n\n"
+    "  - precision: Fudge precision enumerated integer  (see fudge.types)\n"
+    "  - year: integer representing the year\n"
+    "  - month: integer from 0-12, zero indicates the field is not set\n"
+    "  - day: integer from 0-31, zero indicates the field is not set\n"
+    "  - hours: integer greater or equal to zero\n"
+    "  - minutes: integer from 0-59\n"
+    "  - seconds: integer from 0-59\n"
+    "  - nanoseconds: integer from 0-1000000000\n"
+    "  - offset: number of fifteen minute intervals that the timezone differs\n"
+    "            from UTC by (e.g. +1h would be 4) or None if no timezone\n"
+    "            information\n\n"
+    "@return: ( int, int, int, int, int, int, int, int, int|None) for\n"
+    "         fudgepyc.Exception if wrong type\n";
+PyObject * Field_getRawDateTime ( Field * self )
+{
+    if ( self->field.type == FUDGE_TYPE_DATETIME )
+        return fudgepyc_convertDateTimeToPythonEx ( &self->field.data.datetime );
+    exception_raise_any ( FudgePyc_Exception,
+                          "Can only get DateTime fields as raw datetime" );
+    return 0;
+}
 
 static const char DOC_fudgepyc_field_getByteArray [] =
-"\nGet the field value as a [int, ...], if it is a byte array (either\n"
-"fixed or variable width. To get the bytes as a String, use\n"
-"fudgepyc.Field.bytes or fudgepyc.Field.value\n\n"
-"@return: [int, ...], or fudgepyc.Exception if of incorrect type\n";
+    "\nGet the field value as a [int, ...], if it is a byte array (either\n"
+    "fixed or variable width. To get the bytes as a String, use\n"
+    "fudgepyc.Field.bytes or fudgepyc.Field.value\n\n"
+    "@return: [int, ...], or fudgepyc.Exception if of incorrect type\n";
 PyObject * Field_getByteArray ( Field * field )
 {
     if ( field->field.type == FUDGE_TYPE_BYTE_ARRAY ||
@@ -333,8 +405,8 @@ PyObject * Field_getByteArray ( Field * field )
 }
 
 static const char DOC_fudgepyc_field_getAsBool [] =
-"\nGet the field value as bool, if Fudge can coerce the value.\n\n"
-"@return: bool, or fudgepyc.Exception if the coercion fails\n";
+    "\nGet the field value as bool, if Fudge can coerce the value.\n\n"
+    "@return: bool, or fudgepyc.Exception if the coercion fails\n";
 PyObject * Field_getAsBool ( Field * self )
 {
     fudge_bool target;
@@ -522,39 +594,47 @@ clear_string_and_fail:
 
 static PyMethodDef Field_methods [] =
 {
-    { "name",            ( PyCFunction ) Field_name,         METH_NOARGS, DOC_fudgepyc_field_name },
-    { "ordinal",         ( PyCFunction ) Field_ordinal,      METH_NOARGS, DOC_fudgepyc_field_ordinal },
-    { "type",            ( PyCFunction ) Field_type,         METH_NOARGS, DOC_fudgepyc_field_type },
-    { "numbytes",        ( PyCFunction ) Field_numbytes,     METH_NOARGS, DOC_fudgepyc_field_numbytes },
-    { "bytes",           ( PyCFunction ) Field_bytes,        METH_NOARGS, DOC_fudgepyc_field_bytes },
+    { "name",            ( PyCFunction ) Field_name,           METH_NOARGS, DOC_fudgepyc_field_name },
+    { "ordinal",         ( PyCFunction ) Field_ordinal,        METH_NOARGS, DOC_fudgepyc_field_ordinal },
+    { "type",            ( PyCFunction ) Field_type,           METH_NOARGS, DOC_fudgepyc_field_type },
+    { "numbytes",        ( PyCFunction ) Field_numbytes,       METH_NOARGS, DOC_fudgepyc_field_numbytes },
+    { "bytes",           ( PyCFunction ) Field_bytes,          METH_NOARGS, DOC_fudgepyc_field_bytes },
 
-    { "getBool",         ( PyCFunction ) Field_getBool,      METH_NOARGS, DOC_fudgepyc_field_getBool },
-    { "getByte",         ( PyCFunction ) Field_getByte,      METH_NOARGS, DOC_fudgepyc_field_getByte },
-    { "getInt16",        ( PyCFunction ) Field_getI16,       METH_NOARGS, DOC_fudgepyc_field_getI16 },
-    { "getInt32",        ( PyCFunction ) Field_getI32,       METH_NOARGS, DOC_fudgepyc_field_getI32 },
-    { "getInt64",        ( PyCFunction ) Field_getI64,       METH_NOARGS, DOC_fudgepyc_field_getI64 },
-    { "getFloat32",      ( PyCFunction ) Field_getF32,       METH_NOARGS, DOC_fudgepyc_field_getF32 },
-    { "getFloat64",      ( PyCFunction ) Field_getF64,       METH_NOARGS, DOC_fudgepyc_field_getF64 },
+    { "getBool",         ( PyCFunction ) Field_getBool,        METH_NOARGS, DOC_fudgepyc_field_getBool },
+    { "getByte",         ( PyCFunction ) Field_getByte,        METH_NOARGS, DOC_fudgepyc_field_getByte },
+    { "getInt16",        ( PyCFunction ) Field_getI16,         METH_NOARGS, DOC_fudgepyc_field_getI16 },
+    { "getInt32",        ( PyCFunction ) Field_getI32,         METH_NOARGS, DOC_fudgepyc_field_getI32 },
+    { "getInt64",        ( PyCFunction ) Field_getI64,         METH_NOARGS, DOC_fudgepyc_field_getI64 },
+    { "getFloat32",      ( PyCFunction ) Field_getF32,         METH_NOARGS, DOC_fudgepyc_field_getF32 },
+    { "getFloat64",      ( PyCFunction ) Field_getF64,         METH_NOARGS, DOC_fudgepyc_field_getF64 },
 
-    { "getMessage",      ( PyCFunction ) Field_getMsg,       METH_NOARGS, DOC_fudgepyc_field_getMsg },
-    { "getString",       ( PyCFunction ) Field_getString,    METH_NOARGS, DOC_fudgepyc_field_getString },
+    { "getMessage",      ( PyCFunction ) Field_getMsg,         METH_NOARGS, DOC_fudgepyc_field_getMsg },
+    { "getString",       ( PyCFunction ) Field_getString,      METH_NOARGS, DOC_fudgepyc_field_getString },
 
-    { "getByteArray",    ( PyCFunction ) Field_getByteArray, METH_NOARGS, DOC_fudgepyc_field_getByteArray },
-    { "getInt16Array",   ( PyCFunction ) Field_getI16Array,  METH_NOARGS, DOC_fudgepyc_field_getI16Array },
-    { "getInt32Array",   ( PyCFunction ) Field_getI32Array,  METH_NOARGS, DOC_fudgepyc_field_getI32Array },
-    { "getInt64Array",   ( PyCFunction ) Field_getI64Array,  METH_NOARGS, DOC_fudgepyc_field_getI64Array },
-    { "getFloat32Array", ( PyCFunction ) Field_getF32Array,  METH_NOARGS, DOC_fudgepyc_field_getF32Array },
-    { "getFloat64Array", ( PyCFunction ) Field_getF64Array,  METH_NOARGS, DOC_fudgepyc_field_getF64Array },
+    { "getDate",         ( PyCFunction ) Field_getDate,        METH_NOARGS, DOC_fudgepyc_field_getDate },
+    { "getTime",         ( PyCFunction ) Field_getTime,        METH_NOARGS, DOC_fudgepyc_field_getTime },
+    { "getDateTime",     ( PyCFunction ) Field_getDateTime,    METH_NOARGS, DOC_fudgepyc_field_getDateTime },
 
-    { "getAsBool",       ( PyCFunction ) Field_getAsBool,    METH_NOARGS, DOC_fudgepyc_field_getAsBool },
-    { "getAsByte",       ( PyCFunction ) Field_getAsByte,    METH_NOARGS, DOC_fudgepyc_field_getAsByte },
-    { "getAsInt16",      ( PyCFunction ) Field_getAsI16,     METH_NOARGS, DOC_fudgepyc_field_getAsI16 },
-    { "getAsInt32",      ( PyCFunction ) Field_getAsI32,     METH_NOARGS, DOC_fudgepyc_field_getAsI32 },
-    { "getAsInt64",      ( PyCFunction ) Field_getAsI64,     METH_NOARGS, DOC_fudgepyc_field_getAsI64 },
-    { "getAsFloat32",    ( PyCFunction ) Field_getAsF32,     METH_NOARGS, DOC_fudgepyc_field_getAsF32 },
-    { "getAsFloat64",    ( PyCFunction ) Field_getAsF64,     METH_NOARGS, DOC_fudgepyc_field_getAsF64 },
+    { "getRawDate",      ( PyCFunction ) Field_getRawDate,     METH_NOARGS, DOC_fudgepyc_field_getRawDate },
+    { "getRawTime",      ( PyCFunction ) Field_getRawTime,     METH_NOARGS, DOC_fudgepyc_field_getRawTime },
+    { "getRawDateTime",  ( PyCFunction ) Field_getRawDateTime, METH_NOARGS, DOC_fudgepyc_field_getRawDateTime },
 
-    { "value",           ( PyCFunction ) Field_value,        METH_NOARGS, DOC_fudgepyc_field_value },
+    { "getByteArray",    ( PyCFunction ) Field_getByteArray,   METH_NOARGS, DOC_fudgepyc_field_getByteArray },
+    { "getInt16Array",   ( PyCFunction ) Field_getI16Array,    METH_NOARGS, DOC_fudgepyc_field_getI16Array },
+    { "getInt32Array",   ( PyCFunction ) Field_getI32Array,    METH_NOARGS, DOC_fudgepyc_field_getI32Array },
+    { "getInt64Array",   ( PyCFunction ) Field_getI64Array,    METH_NOARGS, DOC_fudgepyc_field_getI64Array },
+    { "getFloat32Array", ( PyCFunction ) Field_getF32Array,    METH_NOARGS, DOC_fudgepyc_field_getF32Array },
+    { "getFloat64Array", ( PyCFunction ) Field_getF64Array,    METH_NOARGS, DOC_fudgepyc_field_getF64Array },
+
+    { "getAsBool",       ( PyCFunction ) Field_getAsBool,      METH_NOARGS, DOC_fudgepyc_field_getAsBool },
+    { "getAsByte",       ( PyCFunction ) Field_getAsByte,      METH_NOARGS, DOC_fudgepyc_field_getAsByte },
+    { "getAsInt16",      ( PyCFunction ) Field_getAsI16,       METH_NOARGS, DOC_fudgepyc_field_getAsI16 },
+    { "getAsInt32",      ( PyCFunction ) Field_getAsI32,       METH_NOARGS, DOC_fudgepyc_field_getAsI32 },
+    { "getAsInt64",      ( PyCFunction ) Field_getAsI64,       METH_NOARGS, DOC_fudgepyc_field_getAsI64 },
+    { "getAsFloat32",    ( PyCFunction ) Field_getAsF32,       METH_NOARGS, DOC_fudgepyc_field_getAsF32 },
+    { "getAsFloat64",    ( PyCFunction ) Field_getAsF64,       METH_NOARGS, DOC_fudgepyc_field_getAsF64 },
+
+    { "value",           ( PyCFunction ) Field_value,          METH_NOARGS, DOC_fudgepyc_field_value },
     { NULL }
 };
 

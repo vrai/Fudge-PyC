@@ -19,6 +19,8 @@
 #include "exception.h"
 #include <fudge/types.h>
 
+extern int fudgepyc_initialiseConverters ( PyObject * module );
+
 extern int fudgepyc_convertPythonToBool ( fudge_bool * target, PyObject * source );
 extern int fudgepyc_convertPythonToByte ( fudge_byte * target, PyObject * source );
 extern int fudgepyc_convertPythonToI16 ( fudge_i16 * target, PyObject * source );
@@ -29,6 +31,32 @@ extern int fudgepyc_convertPythonToF64 ( fudge_f64 * target, PyObject * source )
 
 extern int fudgepyc_convertPythonToMsg ( FudgeMsg * target, PyObject * source );
 extern int fudgepyc_convertPythonToString ( FudgeString * target, PyObject * source );
+
+extern int fudgepyc_convertPythonToDate ( FudgeDate * target, PyObject * source );
+extern int fudgepyc_convertPythonToTime ( FudgeTime * target, PyObject * source );
+extern int fudgepyc_convertPythonToDateTime ( FudgeDateTime * target, PyObject * source );
+
+extern int fudgepyc_convertPythonToDateEx ( FudgeDate * target,
+                                            PyObject * yearobj,
+                                            PyObject * monthobj,
+                                            PyObject * dayobj );
+extern int fudgepyc_convertPythonToTimeEx ( FudgeTime * target,
+                                            unsigned int precision,
+                                            PyObject * hourobj,
+                                            PyObject * minuteobj,
+                                            PyObject * secondobj,
+                                            PyObject * nanoobj,
+                                            PyObject * offsetobj );
+extern int fudgepyc_convertPythonToDateTimeEx ( FudgeDateTime * target,
+                                                unsigned int precision,
+                                                PyObject * yearobj,
+                                                PyObject * monthobj,
+                                                PyObject * dayobj,
+                                                PyObject * hourobj,
+                                                PyObject * minuteobj,
+                                                PyObject * secondobj,
+                                                PyObject * nanoobj,
+                                                PyObject * offsetobj );
 
 extern int fudgepyc_convertPythonToByteArray ( fudge_byte * * target,
                                                fudge_i32 * size,
@@ -62,6 +90,14 @@ extern PyObject * fudgepyc_convertF32ToPython ( fudge_f32 source );
 extern PyObject * fudgepyc_convertF64ToPython ( fudge_f64 source );
 
 extern PyObject * fudgepyc_convertStringToPython ( FudgeString source );
+
+extern PyObject * fudgepyc_convertDateToPython ( FudgeDate * source );
+extern PyObject * fudgepyc_convertTimeToPython ( FudgeTime * source );
+extern PyObject * fudgepyc_convertDateTimeToPython ( FudgeDateTime * source );
+
+extern PyObject * fudgepyc_convertDateToPythonEx ( FudgeDate * source );
+extern PyObject * fudgepyc_convertTimeToPythonEx ( FudgeTime * source );
+extern PyObject * fudgepyc_convertDateTimeToPythonEx ( FudgeDateTime * source );
 
 extern PyObject * fudgepyc_convertByteArrayToPython ( const fudge_byte * bytes,
                                                       fudge_i32 numbytes );

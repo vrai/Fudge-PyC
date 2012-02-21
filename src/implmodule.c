@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 #include <Python.h>
+#include "converters.h"
 #include "envelope.h"
 #include "field.h"
 #include "modulemethods.h"
@@ -30,7 +31,7 @@ static ModuleTypeDef module_types [] =
 {
     { "Envelope", &EnvelopeType, NULL },
     { "Field",    &FieldType,    Field_modinit },
-    { "Message",  &MessageType,  NULL },
+    { "Message",  &MessageType,  Message_modinit },
     { NULL }
 };
 
@@ -86,9 +87,16 @@ static const char DOC_fudgepyc_module [] =
     "  >>> print '%.2f' % float ( field )\n"
     "  1.23\n"
     "\n"
-    "As well as the main fudgepyc module there is fudgepyc.types. This\n"
-    "contains a list of enumerations for each Fudge type as well as a\n"
-    "dictionary (fudgepyc.TYPE_NAMES) mapping each type to a human readable\n"
+    "As well as the main fudgepyc module there are the fudgepyc.timezone and\n"
+    "fudgepyc.types submodules.\n"
+    "\n"
+    "The timezone module includes a single class fudgepyc.timezone.Timezone, that\n"
+    "provides a simple datetime.tzinfo implementation. This is used by any\n"
+    "datetime.time/datetime.datetime instances that are returned by Fudge-Pyc and\n"
+    "which include timezone information.\n"
+    "\n"
+    "The types module contains a list of enumerations for each Fudge type as well\n"
+    "as a dictionary (fudgepyc.TYPE_NAMES) mapping each type to a human readable\n"
     "name.\n";
 
 PyMODINIT_FUNC initimpl ( void )
@@ -99,28 +107,27 @@ PyMODINIT_FUNC initimpl ( void )
     if ( ! ( module = Py_InitModule3 ( "impl",
                                        module_methods,
                                        DOC_fudgepyc_module ) ) )
-        goto clean_and_fail;
+        return;
 
     if ( exception_init ( module ) )
-        goto clean_and_fail;
+        return;
+
+    if ( fudgepyc_initialiseConverters ( module ) )
+        return;
 
     PyModule_AddStringConstant ( module, "__version__", fudgepyc_version );
 
     for ( mtdef = module_types; mtdef->name; ++mtdef )
     {
         if ( PyType_Ready ( mtdef->type ) )
-            goto clean_and_fail;
+            return;
         if ( mtdef->initfunc && mtdef->initfunc ( module ) )
-            goto clean_and_fail;
+            return;
         Py_INCREF( mtdef->type );
         if ( PyModule_AddObject ( module,
                                   mtdef->name,
                                   ( PyObject * ) mtdef->type ) )
-            goto clean_and_fail;
+            return;
     }
-    return;
-
-clean_and_fail:
-    Py_XDECREF( module );
 }
 

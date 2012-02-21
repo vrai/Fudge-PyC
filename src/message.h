@@ -33,5 +33,7 @@ extern PyObject * Message_create ( FudgeMsg msg );
 extern void Message_storeMessage ( Message * self, Message * field );
 extern PyObject * Message_retrieveMessage ( Message * self, FudgeMsg msg );
 
+extern int Message_modinit ( PyObject * module );
+
 #endif
 

@@ -16,7 +16,7 @@
 #ifndef INC_FUDGEPYC_VERSION_H
 #define INC_FUDGEPYC_VERSION_H
 
-static const char fudgepyc_version [] = "0.1.0";
+static const char fudgepyc_version [] = "0.2.0";
 
 #endif
 

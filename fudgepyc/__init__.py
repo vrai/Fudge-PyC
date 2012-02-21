@@ -22,5 +22,6 @@ from fudgepyc.impl import __doc__, \
                           Exception, \
                           Field, \
                           Message
+import fudgepyc.timezone
 import fudgepyc.types
 

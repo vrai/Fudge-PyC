@@ -16,6 +16,7 @@
 #include "message.h"
 #include "converters.h"
 #include "field.h"
+#include <datetime.h>
 
 /****************************************************************************
  * Constructor/destructor implementations
@@ -95,6 +96,38 @@ static PyObject * Message_addField ## TYPENAME ## Impl (                    \
     Py_RETURN_NONE;                                                         \
 }
 
+#define MESSAGE_ADD_FIELD_PTR_IMPL( TYPENAME, CTYPE )                       \
+static PyObject * Message_addField ## TYPENAME ## Impl (                    \
+           Message * self,                                                  \
+           PyObject * valobj,                                               \
+           PyObject * nameobj,                                              \
+           PyObject * ordobj )                                              \
+{                                                                           \
+    FudgeStatus status;                                                     \
+    FudgeString name = 0;                                                   \
+    fudge_i16 ordinal;                                                      \
+    CTYPE value;                                                            \
+                                                                            \
+    memset ( &value, 0, sizeof ( value ) );                                 \
+                                                                            \
+    if ( fudgepyc_convertPythonTo ## TYPENAME ( &value, valobj ) )          \
+        return 0;                                                           \
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )        \
+        return 0;                                                           \
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )            \
+        return 0;                                                           \
+                                                                            \
+    status = FudgeMsg_addField ## TYPENAME ( self->msg,                     \
+                                             name,                          \
+                                             ordobj ? &ordinal : 0,         \
+                                             &value );                      \
+    FudgeString_release ( name );                                           \
+                                                                            \
+    if ( exception_raiseOnError ( status ) )                                \
+        return 0;                                                           \
+    Py_RETURN_NONE;                                                         \
+}
+
 #define MESSAGE_ADD_FIELD_ARRAY_IMPL( TYPENAME, CTYPE )                     \
 static PyObject * Message_addField ## TYPENAME ## ArrayImpl (               \
            Message * self,                                                  \
@@ -164,7 +197,7 @@ static const char DOC_fudgepyc_message_addField ## TYPENAME [] =            \
     "type\n" PYSTR ". Field name and ordinal are optional.\n\n"             \
     "@param value: field value, of type " PYSTR "\n"                        \
     "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@param ordinal: field ordinal integer, defaults to None\n"             \
     "@return: None or Exception on failure\n";                              \
 PyObject * Message_addField ## TYPENAME ( Message * self,                   \
                                           PyObject * args,                  \
@@ -190,7 +223,7 @@ static const char DOC_fudgepyc_message_addField ## TYPENAME ## Array [] =   \
     "type " PYSTR ". Field name and ordinal are optional.\n\n"              \
     "@param value: field value\n"                                           \
     "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@param ordinal: field ordinal integer, defaults to None\n"             \
     "@return: None or Exception on failure\n";                              \
 PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
                                                    PyObject * args,         \
@@ -214,10 +247,10 @@ PyObject * Message_addField ## TYPENAME ## Array ( Message * self,          \
 static const char DOC_fudgepyc_message_addField ## WIDTH ## ByteArray [] =  \
     "Adds a Byte[" #WIDTH "] field to the Message; value must be of\n"      \
     "Python type String, Unicode or [int, ...] and have a length of "       \
-    #WIDTH ".\nField name and ordinal are optional.\n\n"                   \
+    #WIDTH ".\nField name and ordinal are optional.\n\n"                    \
     "@param value: field value\n"                                           \
     "@param name: field name String, defaults to None\n"                    \
-    "@param ordinal: field ordinal integer, defauls to None\n"              \
+    "@param ordinal: field ordinal integer, defaults to None\n"             \
     "@return: None or Exception on failure\n";                              \
 PyObject * Message_addField ## WIDTH ## ByteArray (                         \
                Message * self,                                              \
@@ -372,6 +405,12 @@ int Message_getFudgeType ( fudge_type_id * type, PyObject * value )
         *type = FUDGE_TYPE_STRING;
     else if ( PyObject_IsInstance ( value, ( PyObject * ) &MessageType ) )
         *type = FUDGE_TYPE_FUDGE_MSG;
+    else if ( PyDateTime_Check ( value ) )
+        *type = FUDGE_TYPE_DATETIME;
+    else if ( PyDate_Check ( value ) )
+        *type = FUDGE_TYPE_DATE;
+    else if ( PyTime_Check ( value ) )
+        *type = FUDGE_TYPE_TIME;
     else
         return -1;
     return 0;
@@ -435,6 +474,10 @@ MESSAGE_ADD_FIELD_SCALAR_IMPL( I64,    fudge_i64, )
 MESSAGE_ADD_FIELD_SCALAR_IMPL( F32,    fudge_f32, )
 MESSAGE_ADD_FIELD_SCALAR_IMPL( F64,    fudge_f64, )
 MESSAGE_ADD_FIELD_SCALAR_IMPL( String, FudgeString, FudgeString_release ( value ); )
+
+MESSAGE_ADD_FIELD_PTR_IMPL( Date,     FudgeDate )
+MESSAGE_ADD_FIELD_PTR_IMPL( Time,     FudgeTime )
+MESSAGE_ADD_FIELD_PTR_IMPL( DateTime, FudgeDateTime )
 
 MESSAGE_ADD_FIELD_ARRAY_IMPL( Byte, fudge_byte )
 MESSAGE_ADD_FIELD_ARRAY_IMPL( I16,  fudge_i16 )
@@ -509,14 +552,17 @@ PyObject * Message_addFieldIndicator ( Message * self, PyObject * args, PyObject
     return Message_addFieldIndicatorImpl ( self, nameobj, ordobj );
 }
 
-MESSAGE_ADD_FIELD_SCALAR( Bool,   "bool",           "Boolean" )
-MESSAGE_ADD_FIELD_SCALAR( Byte,   "int/long",       "Byte" )
-MESSAGE_ADD_FIELD_SCALAR( I16,    "int/long",       "Short" )
-MESSAGE_ADD_FIELD_SCALAR( I32,    "int/long",       "Int" )
-MESSAGE_ADD_FIELD_SCALAR( I64,    "int/long",       "Long" )
-MESSAGE_ADD_FIELD_SCALAR( F32,    "float",          "Float" )
-MESSAGE_ADD_FIELD_SCALAR( F64,    "float",          "Double" )
-MESSAGE_ADD_FIELD_SCALAR( String, "String/Unicode", "String" )
+MESSAGE_ADD_FIELD_SCALAR( Bool,     "bool",              "Boolean" )
+MESSAGE_ADD_FIELD_SCALAR( Byte,     "int/long",          "Byte" )
+MESSAGE_ADD_FIELD_SCALAR( I16,      "int/long",          "Short" )
+MESSAGE_ADD_FIELD_SCALAR( I32,      "int/long",          "Int" )
+MESSAGE_ADD_FIELD_SCALAR( I64,      "int/long",          "Long" )
+MESSAGE_ADD_FIELD_SCALAR( F32,      "float",             "Float" )
+MESSAGE_ADD_FIELD_SCALAR( F64,      "float",             "Double" )
+MESSAGE_ADD_FIELD_SCALAR( String,   "String/Unicode",    "String" )
+MESSAGE_ADD_FIELD_SCALAR( Date,     "datetime.date",     "Date" )
+MESSAGE_ADD_FIELD_SCALAR( Time,     "datetime.time",     "Time" )
+MESSAGE_ADD_FIELD_SCALAR( DateTime, "datetime.datetime", "DateTime" )
 
 static const char DOC_fudgepyc_message_addFieldMsg [] =
     "\nAdds a Message field to the current Message; value must be a\n"
@@ -559,6 +605,199 @@ MESSAGE_ADD_FIELD_FIXED_ARRAY( 128 );
 MESSAGE_ADD_FIELD_FIXED_ARRAY( 256 );
 MESSAGE_ADD_FIELD_FIXED_ARRAY( 512 );
 
+static const char DOC_fudgepyc_message_addFieldRawDate [] =
+    "\nAdds a Date field to the message, using raw date components. Allows dates\n"
+    "to be used outside the scope supported by the built-in datetime classes.\n\n"
+    "@param year: year as integer, defaults to None\n"
+    "@param month: integer from 0-12 (zero is \"unset\"), defaults to None\n"
+    "@param day: integer from 0-31 (zero is \"unset\"), defaults to None\n"
+    "@param name: field name String, defaults to None\n"
+    "@param ordinal: field ordinal integer, defaults to None\n"
+    "@return: None or Exception on failure\n";
+PyObject * Message_addFieldRawDate ( Message * self, PyObject * args, PyObject * kwds )
+{
+    static char * kwlist [] = { "year", "month", "day", "name", "ordinal", 0 };
+
+    PyObject * ordobj = 0,
+             * nameobj = 0,
+             * yearobj = 0,
+             * monthobj = 0,
+             * dayobj = 0;
+    FudgeString name = 0;
+    fudge_i16 ordinal;
+    FudgeDate date;
+    FudgeStatus status;
+
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "|O!O!O!OO!", kwlist,
+                                                     &PyInt_Type, &yearobj,
+                                                     &PyInt_Type, &monthobj,
+                                                     &PyInt_Type, &dayobj,
+                                                     &nameobj,
+                                                     &PyInt_Type, &ordobj ) )
+        return 0;
+
+    if ( fudgepyc_convertPythonToDateEx ( &date, yearobj, monthobj, dayobj ) )
+        return 0;
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )
+        return 0;
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )
+        return 0;
+
+    status = FudgeMsg_addFieldDate ( self->msg,
+                                     name,
+                                     ordobj ? &ordinal : 0,
+                                     &date );
+    FudgeString_release ( name );
+
+    if ( exception_raiseOnError ( status ) )
+        return 0;
+    Py_RETURN_NONE;
+}
+
+static const char DOC_fudgepyc_message_addFieldRawTime [] =
+    "\nAdds a Time field to the message, using raw time components. Allows times\n"
+    "to be used outside the scope supported by the built-in datetime classes.\n\n"
+    "@param precision: precision as an integer, see fudge.types for valid values\n"
+    "@param hour: integer equal to or greater than zero, defaults to None\n"
+    "@param minute: integer from 0-59, defaults to None\n"
+    "@param second: integer from 0-59, defaults to None\n"
+    "@param nanoseconds: integer from 0-1000000000, defaults to None\n"
+    "@param offset: number of fifteen minute intervals that the localtime differs\n"
+    "               from UTC by (e.g. UTC-5h would be -20). Defaults to None (no\n"
+    "               timezone information)\n"
+    "@return: None or Exception on failure\n";
+PyObject * Message_addFieldRawTime ( Message * self, PyObject * args, PyObject * kwds )
+{
+    static char * kwlist [] = { "precision",
+                                "hour", "minute", "second", "nanosecond", "offset",
+                                "name", "ordinal", 0 };
+
+    PyObject * ordobj = 0,
+             * nameobj = 0,
+             * hourobj = 0,
+             * minobj = 0,
+             * secobj = 0,
+             * nanoobj = 0,
+             * offsetobj = 0;
+    unsigned int precision;
+    FudgeString name = 0;
+    fudge_i16 ordinal;
+    FudgeTime time;
+    FudgeStatus status;
+
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "I|O!O!O!O!O!OO!", kwlist,
+                                                     &precision,
+                                                     &PyInt_Type, &hourobj,
+                                                     &PyInt_Type, &minobj,
+                                                     &PyInt_Type, &secobj,
+                                                     &PyInt_Type, &nanoobj,
+                                                     &PyInt_Type, &offsetobj,
+                                                     &nameobj,
+                                                     &PyInt_Type, &ordobj ) )
+        return 0;
+
+    if ( fudgepyc_convertPythonToTimeEx ( &time,
+                                          precision,
+                                          hourobj,
+                                          minobj,
+                                          secobj,
+                                          nanoobj,
+                                          offsetobj ) )
+        return 0;
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )
+        return 0;
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )
+        return 0;
+
+    status = FudgeMsg_addFieldTime ( self->msg,
+                                     name,
+                                     ordobj ? &ordinal : 0,
+                                     &time );
+    FudgeString_release ( name );
+
+    if ( exception_raiseOnError ( status ) )
+        return 0;
+    Py_RETURN_NONE;
+}
+
+static const char DOC_fudgepyc_message_addFieldRawDateTime [] =
+    "\nAdds a DateTime field to the message, using raw date and time components.\n"
+    "Allows datetimes to be used outside the scope supported by the built-in\n"
+    "datetime classes.\n\n"
+    "@param precision: precision as an integer, see fudge.types for valid values\n"
+    "@param year: year as integer, defaults to None\n"
+    "@param month: integer from 0-12 (zero is \"unset\"), defaults to None\n"
+    "@param day: integer from 0-31 (zero is \"unset\"), defaults to None\n"
+    "@param hour: integer equal to or greater than zero, defaults to None\n"
+    "@param minute: integer from 0-59, defaults to None\n"
+    "@param second: integer from 0-59, defaults to None\n"
+    "@param nanoseconds: integer from 0-1000000000, defaults to None\n"
+    "@param offset: number of fifteen minute intervals that the localtime differs\n"
+    "               from UTC by (e.g. UTC-5h would be -20). Defaults to None (no\n"
+    "               timezone information)\n"
+    "@return: None or Exception on failure\n";
+PyObject * Message_addFieldRawDateTime ( Message * self, PyObject * args, PyObject * kwds )
+{
+    static char * kwlist [] = { "precision",
+                                "year", "month", "day",
+                                "hour", "minute", "second", "nanosecond", "offset",
+                                "name", "ordinal", 0 };
+
+    PyObject * ordobj = 0,
+             * nameobj = 0,
+             * yearobj = 0,
+             * monthobj = 0,
+             * dayobj = 0,
+             * hourobj = 0,
+             * minobj = 0,
+             * secobj = 0,
+             * nanoobj = 0,
+             * offsetobj = 0;
+    unsigned int precision;
+    FudgeString name = 0;
+    fudge_i16 ordinal;
+    FudgeDateTime datetime;
+    FudgeStatus status;
+
+    if ( ! PyArg_ParseTupleAndKeywords ( args, kwds, "I|O!O!O!O!O!O!O!O!OO!", kwlist,
+                                                     &precision,
+                                                     &PyInt_Type, &yearobj,
+                                                     &PyInt_Type, &monthobj,
+                                                     &PyInt_Type, &dayobj,
+                                                     &PyInt_Type, &hourobj,
+                                                     &PyInt_Type, &minobj,
+                                                     &PyInt_Type, &secobj,
+                                                     &PyInt_Type, &nanoobj,
+                                                     &PyInt_Type, &offsetobj,
+                                                     &nameobj,
+                                                     &PyInt_Type, &ordobj ) )
+        return 0;
+    if ( fudgepyc_convertPythonToDateTimeEx ( &datetime,
+                                              precision,
+                                              yearobj,
+                                              monthobj,
+                                              dayobj,
+                                              hourobj,
+                                              minobj,
+                                              secobj,
+                                              nanoobj,
+                                              offsetobj ) )
+        return 0;
+    if ( ordobj && Message_parseOrdinalObject ( &ordinal, ordobj ) )
+        return 0;
+    if ( nameobj && Message_parseNameObject ( &name, nameobj ) )
+        return 0;
+
+    status = FudgeMsg_addFieldDateTime ( self->msg,
+                                         name,
+                                         ordobj ? &ordinal : 0,
+                                         &datetime );
+
+    if ( exception_raiseOnError ( status ) )
+        return 0;
+    Py_RETURN_NONE;
+}
+
 static const char DOC_fudgepyc_message_addField [] =
     "\nAdds a field to the Message. If the type is specified (should be\n"
     "Fudge type, see fudgepyc.types) then the field is assumed to be that.\n"
@@ -573,6 +812,9 @@ static const char DOC_fudgepyc_message_addField [] =
     "  - String: String\n"
     "  - Unicode: String\n"
     "  - fudgepyc.Message: FudgeMsg\n"
+    "  - datetime.date: Date\n"
+    "  - datetime.time: Time\n"
+    "  - datetime.datetime: DateTime\n"
     "\n"
     "All other types must be added using an explicity set type, or using one\n"
     "of the named type adder methods. Field name and ordinal are optional.\n"
@@ -603,7 +845,7 @@ PyObject * Message_addField ( Message * self, PyObject * args, PyObject * kwds )
        determine the type from that of the Python value object */
     if ( typeobj )
     {
-        int type = PyInt_AsLong ( typeobj );
+        int type = ( int ) PyInt_AsLong ( typeobj );
         if ( type < 0 || type > 255 )
         {
             exception_raise_any ( PyExc_OverflowError,
@@ -664,6 +906,10 @@ PyObject * Message_addField ( Message * self, PyObject * args, PyObject * kwds )
         case FUDGE_TYPE_BYTE_ARRAY_128: return Message_addField128ByteArrayImpl ( self, valobj, nameobj, ordobj );
         case FUDGE_TYPE_BYTE_ARRAY_256: return Message_addField256ByteArrayImpl ( self, valobj, nameobj, ordobj );
         case FUDGE_TYPE_BYTE_ARRAY_512: return Message_addField512ByteArrayImpl ( self, valobj, nameobj, ordobj );
+
+        case FUDGE_TYPE_DATE:           return Message_addFieldDateImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_TIME:           return Message_addFieldTimeImpl ( self, valobj, nameobj, ordobj );
+        case FUDGE_TYPE_DATETIME:       return Message_addFieldDateTimeImpl ( self, valobj, nameobj, ordobj );
 
         default:
             exception_raise_any ( PyExc_TypeError,
@@ -856,7 +1102,13 @@ static PyMethodDef Message_methods [] =
     { "addField256ByteArray", ( PyCFunction ) Message_addField256ByteArray, METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addField256ByteArray },
     { "addField512ByteArray", ( PyCFunction ) Message_addField512ByteArray, METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addField512ByteArray },
 
-    /* TODO Date/time */
+    { "addFieldDate",         ( PyCFunction ) Message_addFieldDate,         METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldDate },
+    { "addFieldTime",         ( PyCFunction ) Message_addFieldTime,         METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldTime },
+    { "addFieldDateTime",     ( PyCFunction ) Message_addFieldDateTime,     METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldDateTime },
+
+    { "addFieldRawDate",      ( PyCFunction ) Message_addFieldRawDate,      METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldRawDate },
+    { "addFieldRawTime",      ( PyCFunction ) Message_addFieldRawTime,      METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldRawTime },
+    { "addFieldRawDateTime",  ( PyCFunction ) Message_addFieldRawDateTime,  METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addFieldRawDateTime },
 
     { "addField",             ( PyCFunction ) Message_addField,             METH_VARARGS | METH_KEYWORDS, DOC_fudgepyc_message_addField },
 
@@ -922,9 +1174,6 @@ PyTypeObject MessageType =
  * Type functions
  */
 
-/* TODO Add Message_modinit function and change Message dictionary to add
-   documentation for __getitem__. */
-
 PyObject * Message_create ( FudgeMsg msg )
 {
     Message * obj = ( Message * ) MessageType.tp_new ( &MessageType, 0, 0 );
@@ -972,5 +1221,11 @@ PyObject * Message_retrieveMessage ( Message * self, FudgeMsg msg )
 clean_and_return:
     Py_DECREF( rawptr );
     return target;
+}
+
+int Message_modinit ( PyObject * module )
+{
+    PyDateTime_IMPORT;
+    return 0;
 }
 

@@ -24,7 +24,7 @@ typedef struct
     const char * str;
 } AttrDef;
 
-static AttrDef module_attrs [] =
+static AttrDef module_typeattrs [] =
 {
     { "INDICATOR", FUDGE_TYPE_INDICATOR, "indicator" },
     { "BOOLEAN",   FUDGE_TYPE_BOOLEAN,   "boolean" },
@@ -61,37 +61,40 @@ static AttrDef module_attrs [] =
     { NULL }
 };
 
+static AttrDef module_precisionattrs [] =
+{
+    { "PRECISION_MILLENNIUM",  FUDGE_DATETIME_PRECISION_MILLENNIUM,  "millennium" },
+    { "PRECISION_CENTURY",     FUDGE_DATETIME_PRECISION_CENTURY,     "century" },
+    { "PRECISION_YEAR",        FUDGE_DATETIME_PRECISION_YEAR,        "year" },
+    { "PRECISION_MONTH",       FUDGE_DATETIME_PRECISION_MONTH,       "month" },
+    { "PRECISION_DAY",         FUDGE_DATETIME_PRECISION_DAY,         "day" },
+    { "PRECISION_HOUR",        FUDGE_DATETIME_PRECISION_HOUR,        "hour" },
+    { "PRECISION_MINUTE",      FUDGE_DATETIME_PRECISION_MINUTE,      "minute" },
+    { "PRECISION_SECOND",      FUDGE_DATETIME_PRECISION_SECOND,      "second" },
+    { "PRECISION_MILLISECOND", FUDGE_DATETIME_PRECISION_MILLISECOND, "millisecond" },
+    { "PRECISION_MICROSECOND", FUDGE_DATETIME_PRECISION_MICROSECOND, "microsecond" },
+    { "PRECISION_NANOSECOND",  FUDGE_DATETIME_PRECISION_NANOSECOND,  "nanosecond" },
+    { NULL }
+};
+
 static PyMethodDef module_methods [] =
 {
     { NULL }
 };
 
-static const char DOC_fudgepyc_typesmodule [] =
-    "\nThe types module of Fudge-PyC provides enumerations for all the built-\n"
-    "in Fudge types. The enumeration names are identical to the types in\n"
-    "fudge/types.h, with the FUDGE_TYPE_ leader removed.\n\n"
-    "The module also provides a dictionary, fudgepyc.types.TYPE_NAMES, that\n"
-    "maps these enumerations to human readable strings.\n";
-
-PyMODINIT_FUNC inittypes ( void )
+static int fudgepyc_typesAddModuleAttrs ( PyObject * module,
+                                          const char * dictname,
+                                          AttrDef * attrs )
 {
-    PyObject * module = 0,
-             * namedict = 0,
-             * intobj = 0,
-             * strobj = 0;
+    PyObject * intobj = 0,
+             * strobj = 0,
+             * namedict;
     AttrDef * attrdef;
 
-    if ( ! ( module = Py_InitModule3 ( "fudgepyc.types",
-                                       module_methods,
-                                       DOC_fudgepyc_typesmodule ) ) )
-        goto clean_and_fail;
-
-    PyModule_AddStringConstant ( module, "__version__", fudgepyc_version );
-
     if ( ! ( namedict = PyDict_New ( ) ) )
-        goto clean_and_fail;
+        return -1;
 
-    for ( attrdef = module_attrs; attrdef->name; ++attrdef )
+    for ( attrdef = attrs; attrdef->name; ++attrdef )
     {
         if ( PyModule_AddIntConstant ( module, attrdef->name, attrdef->id ) )
             goto clean_and_fail;
@@ -108,9 +111,7 @@ PyMODINIT_FUNC inittypes ( void )
         Py_DECREF( strobj );
     }
 
-    if ( PyModule_AddObject ( module, "TYPE_NAMES", namedict ) )
-        goto clean_and_fail;
-    return;
+    return PyModule_AddObject ( module, dictname, namedict );
 
 clean_and_fail_loop:
     Py_XDECREF( intobj );
@@ -118,6 +119,32 @@ clean_and_fail_loop:
 
 clean_and_fail:
     Py_XDECREF( namedict );
-    Py_XDECREF( module );
+    return -1;
+}
+
+static const char DOC_fudgepyc_typesmodule [] =
+    "\nThe types module of Fudge-PyC provides enumerations for all the built-\n"
+    "in Fudge types and precision constants. The type enumeration names are\n"
+    "identical to the types in fudge/types.h, with the FUDGE_TYPE_ leader removed.\n\n"
+    "The module also provides a dictionary, fudgepyc.types.TYPE_NAMES, that\n"
+    "maps these enumerations to human readable strings.\n\n"
+    "The date/time precision constants are defined as the symbols starting with\n"
+    "\"PRECISION_\". Like the type names a dictionary mapping constant to human\n"
+    "readable name is provided: fudgepyc.types.PRECISION_NAMES.";
+
+PyMODINIT_FUNC inittypes ( void )
+{
+    PyObject * module = 0;
+
+    if ( ! ( module = Py_InitModule3 ( "fudgepyc.types",
+                                       module_methods,
+                                       DOC_fudgepyc_typesmodule ) ) )
+        return;
+
+    PyModule_AddStringConstant ( module, "__version__", fudgepyc_version );
+
+    if ( fudgepyc_typesAddModuleAttrs ( module, "TYPE_NAMES",      module_typeattrs ) ||
+         fudgepyc_typesAddModuleAttrs ( module, "PRECISION_NAMES", module_precisionattrs ) )
+        return;
 }
 

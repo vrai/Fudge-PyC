@@ -14,12 +14,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os.path
+import datetime, os.path
 from functools import partial
 from unittest import TestCase, TestSuite
 import fudgepyc
 import fudgepyc.types
 from fudgepyc import Envelope, Field, Message
+from fudgepyc.timezone import Timezone
 
 DATA_DIR = 'data'
 DATA_FILES = { 'ALLNAMES'      : 'allNames.dat',
@@ -190,7 +191,48 @@ class CodecTestCase ( TestCase ):
 
     def testDecodeDateTimes ( self ):
         message1 = self.__loadMessage ( 'DATETIMES' )
-        # TODO Add when date/time/datetime functionality is added to Python wrapper
+        fields = message1.getFields ( )
+        self.assertEqual ( len ( fields ), 16 )
+
+        # Check the fields in Python datetime form (nanoseconds are truncated)
+        self.__checkField ( fields [ 0 ], fudgepyc.types.DATE, datetime.date ( 2010, 1, 1 ), 'date-Year',  None, Field.value )
+        self.__checkField ( fields [ 1 ], fudgepyc.types.DATE, datetime.date ( 2010, 3, 1 ), 'date-Month', None, Field.value )
+        self.__checkField ( fields [ 2 ], fudgepyc.types.DATE, datetime.date ( 2010, 3, 4 ), 'date-Day',   None, Field.value )
+
+        self.__checkField ( fields [  3 ], fudgepyc.types.TIME, datetime.time ( 11,  0,  0,      0, Timezone ( 0 ) ), 'time-Hour-UTC',   None, Field.value )
+        self.__checkField ( fields [  4 ], fudgepyc.types.TIME, datetime.time ( 11, 12,  0,      0, Timezone ( 0 ) ), 'time-Minute-UTC', None, Field.value )
+        self.__checkField ( fields [  5 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13,      0, Timezone ( 0 ) ), 'time-Second-UTC', None, Field.value )
+        self.__checkField ( fields [  6 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13, 987000, Timezone ( 0 ) ), 'time-Milli-UTC',  None, Field.value )
+        self.__checkField ( fields [  7 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13, 987654, Timezone ( 0 ) ), 'time-Micro-UTC',  None, Field.value )
+        self.__checkField ( fields [  8 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13, 987654, Timezone ( 0 ) ), 'time-Nano-UTC',   None, Field.value )
+        self.__checkField ( fields [  9 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13, 987654 ),                 'time-Nano',       None, Field.value )
+        self.__checkField ( fields [ 10 ], fudgepyc.types.TIME, datetime.time ( 11, 12, 13, 987654, Timezone ( 4 ) ), 'time-Nano-+1h',   None, Field.value )
+
+        self.__checkField ( fields [ 11 ], fudgepyc.types.DATETIME, datetime.datetime ( 1000, 1, 1 ),                                     'datetime-Millenia', None, Field.value )
+        self.__checkField ( fields [ 12 ], fudgepyc.types.DATETIME, datetime.datetime ( 1900, 1, 1 ),                                     'datetime-Century',  None, Field.value )
+        self.__checkField ( fields [ 13 ], fudgepyc.types.DATETIME, datetime.datetime ( 2010, 3, 4, 11, 12, 13, 987654, Timezone ( 0 ) ), 'datetime-Nano-UTC', None, Field.value )
+        self.__checkField ( fields [ 14 ], fudgepyc.types.DATETIME, datetime.datetime ( 2010, 3, 4, 11, 12, 13, 987654 ),                 'datetime-Nano',     None, Field.value )
+        self.__checkField ( fields [ 15 ], fudgepyc.types.DATETIME, datetime.datetime ( 2010, 3, 4, 11, 12, 13, 987654, Timezone ( 4 ) ), 'datetime-Nano-+1h', None, Field.value )
+
+        # Check the fields in raw tuple form
+        self.__checkField ( fields [ 0 ], fudgepyc.types.DATE, ( 2010, 0, 0 ), 'date-Year',  None, Field.getRawDate )
+        self.__checkField ( fields [ 1 ], fudgepyc.types.DATE, ( 2010, 3, 0 ), 'date-Month', None, Field.getRawDate )
+        self.__checkField ( fields [ 2 ], fudgepyc.types.DATE, ( 2010, 3, 4 ), 'date-Day',   None, Field.getRawDate )
+
+        self.__checkField ( fields [  3 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_HOUR,        11,  0,  0, 0, 0 ),            'time-Hour-UTC',   None, Field.getRawTime )
+        self.__checkField ( fields [  4 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_MINUTE,      11, 12,  0, 0, 0 ),            'time-Minute-UTC', None, Field.getRawTime )
+        self.__checkField ( fields [  5 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_SECOND,      11, 12, 13, 0, 0 ),            'time-Second-UTC', None, Field.getRawTime )
+        self.__checkField ( fields [  6 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_MILLISECOND, 11, 12, 13, 987000000, 0 ),    'time-Milli-UTC',  None, Field.getRawTime )
+        self.__checkField ( fields [  7 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_MICROSECOND, 11, 12, 13, 987654000, 0 ),    'time-Micro-UTC',  None, Field.getRawTime )
+        self.__checkField ( fields [  8 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_NANOSECOND,  11, 12, 13, 987654321, 0 ),    'time-Nano-UTC',   None, Field.getRawTime )
+        self.__checkField ( fields [  9 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_NANOSECOND,  11, 12, 13, 987654321, None ), 'time-Nano',       None, Field.getRawTime )
+        self.__checkField ( fields [ 10 ], fudgepyc.types.TIME, ( fudgepyc.types.PRECISION_NANOSECOND,  11, 12, 13, 987654321, 4 ),    'time-Nano-+1h',   None, Field.getRawTime )
+
+        self.__checkField ( fields [ 11 ], fudgepyc.types.DATETIME, ( fudgepyc.types.PRECISION_MILLENNIUM, 1000, 0, 0, 0, 0, 0, 0, None ),            'datetime-Millenia', None, Field.getRawDateTime )
+        self.__checkField ( fields [ 12 ], fudgepyc.types.DATETIME, ( fudgepyc.types.PRECISION_CENTURY,    1900, 0, 0, 0, 0, 0, 0, None ),            'datetime-Century',  None, Field.getRawDateTime )
+        self.__checkField ( fields [ 13 ], fudgepyc.types.DATETIME, ( fudgepyc.types.PRECISION_NANOSECOND, 2010, 3, 4, 11, 12, 13, 987654321, 0 ),    'datetime-Nano-UTC', None, Field.getRawDateTime )
+        self.__checkField ( fields [ 14 ], fudgepyc.types.DATETIME, ( fudgepyc.types.PRECISION_NANOSECOND, 2010, 3, 4, 11, 12, 13, 987654321, None ), 'datetime-Nano',     None, Field.getRawDateTime )
+        self.__checkField ( fields [ 15 ], fudgepyc.types.DATETIME, ( fudgepyc.types.PRECISION_NANOSECOND, 2010, 3, 4, 11, 12, 13, 987654321, 4 ),    'datetime-Nano-+1h', None, Field.getRawDateTime )
 
 
     def testDecodeDeepTree ( self ):
@@ -371,7 +413,41 @@ class CodecTestCase ( TestCase ):
 
 
     def testEncodeDateTimes ( self ):
-        pass # TODO Add when date/time/datetime functionality is added to Python wrapper
+        # Construct the message
+        message1 = Message ( )
+
+        message1.addFieldRawDate ( 2010, 0, 0, 'date-Year' )
+        message1.addFieldRawDate ( 2010, 3, 0, 'date-Month' )
+        message1.addFieldRawDate ( 2010, 3, 4, 'date-Day' )
+
+        for precision, name, timezone in ( ( fudgepyc.types.PRECISION_HOUR,        'time-Hour-UTC',   0 ),
+                                           ( fudgepyc.types.PRECISION_MINUTE,      'time-Minute-UTC', 0 ),
+                                           ( fudgepyc.types.PRECISION_SECOND,      'time-Second-UTC', 0 ),
+                                           ( fudgepyc.types.PRECISION_MILLISECOND, 'time-Milli-UTC',  0 ),
+                                           ( fudgepyc.types.PRECISION_MICROSECOND, 'time-Micro-UTC',  0 ),
+                                           ( fudgepyc.types.PRECISION_NANOSECOND,  'time-Nano-UTC',   0 ),
+                                           ( fudgepyc.types.PRECISION_NANOSECOND,  'time-Nano',       None ),
+                                           ( fudgepyc.types.PRECISION_NANOSECOND,  'time-Nano-+1h',   4 ) ):
+            if timezone is None:
+                message1.addFieldRawTime ( precision, 11, 12, 13, 987654321, name = name )
+            else:
+                message1.addFieldRawTime ( precision, 11, 12, 13, 987654321, timezone, name )
+
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_MILLENNIUM, 1000, name = 'datetime-Millenia' )
+        message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_CENTURY,    1900, name = 'datetime-Century' )
+
+        for timezone, name in ( ( 0,    'datetime-Nano-UTC' ),
+                                ( None, 'datetime-Nano' ),
+                                ( 4,    'datetime-Nano-+1h' ) ):
+            if timezone is None:
+                message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_NANOSECOND, 2010, 3, 4, 11, 12, 13, 987654321, name = name )
+            else:
+                message1.addFieldRawDateTime ( fudgepyc.types.PRECISION_NANOSECOND, 2010, 3, 4, 11, 12, 13, 987654321, timezone, name )
+
+        # Encode it and compare against the test file
+        encoded = Envelope ( message1 ).encode ( )
+        reference = self.__loadFile ( 'DATETIMES' )
+        self.assertEquals ( encoded, reference )
 
 
     def testEncodeDeepTree ( self ):
